@@ -19,6 +19,7 @@ import { buildOpening, coachReply } from "@/lib/tone";
 import { tryLlmReply } from "@/lib/llm-client";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
+import { createSupabaseBrowser } from "@/lib/supabase/browser";
 
 function uid() {
   return crypto.randomUUID();
@@ -59,6 +60,7 @@ type Actions = {
   ) => void;
   logWeight: (kg: number) => void;
   resetAll: () => void;
+  signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
 };
 
@@ -537,6 +539,14 @@ export const useAppStore = create<AppState & Actions>()(
 
         resetAll: () =>
           set({ ...initial, messages: [], sessions: [], mealLogs: [], metrics: [] }),
+
+        signOut: async () => {
+          const supabase = createSupabaseBrowser();
+          if (supabase) {
+            await supabase.auth.signOut().catch(() => {});
+          }
+          set({ ...initial, messages: [], sessions: [], mealLogs: [], metrics: [] });
+        },
       };
     },
     {

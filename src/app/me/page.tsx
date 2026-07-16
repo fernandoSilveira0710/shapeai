@@ -18,6 +18,7 @@ export default function MePage() {
   const setSubscription = useAppStore((s) => s.setSubscription);
   const updateTone = useAppStore((s) => s.updateTone);
   const resetAll = useAppStore((s) => s.resetAll);
+  const signOut = useAppStore((s) => s.signOut);
   const [pushStatus, setPushStatus] = useState<string>("");
   const [installHint, setInstallHint] = useState("");
 
@@ -50,9 +51,8 @@ export default function MePage() {
   if (!profile || !plan) return null;
 
   function logout() {
-    if (!confirm("Isso apaga o progresso local deste aparelho. Continuar?")) return;
-    resetAll();
-    router.replace("/");
+    if (!confirm("Sair da conta? Os dados locais serão apagados deste aparelho.")) return;
+    signOut().then(() => router.replace("/"));
   }
 
   async function enablePush() {
@@ -164,7 +164,10 @@ export default function MePage() {
         </Card>
 
         <Button variant="danger" className="w-full" onClick={logout}>
-          Resetar app (apagar dados locais)
+          Sair da conta
+        </Button>
+        <Button variant="secondary" className="w-full" onClick={() => { resetAll(); router.replace("/"); }}>
+          Sair (modo demo — apagar dados locais)
         </Button>
         <p className="text-[11px] text-center text-muted pb-4">
           Shape.ai MVP · dados só neste browser (localStorage)

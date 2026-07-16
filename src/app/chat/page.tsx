@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Send, Sparkles } from "lucide-react";
+import { Camera, LogOut, Send, Sparkles } from "lucide-react";
 import { TabBar } from "@/components/tab-bar";
 import { Button, Chip, Sheet, TypingDots } from "@/components/ui";
 import { TONE_META } from "@/lib/tone";
@@ -102,6 +102,7 @@ export default function ChatPage() {
   const startWorkout = useAppStore((s) => s.startWorkout);
   const addMessage = useAppStore((s) => s.addMessage);
   const logWeight = useAppStore((s) => s.logWeight);
+  const signOut = useAppStore((s) => s.signOut);
 
   const [text, setText] = useState("");
   const [weightSheet, setWeightSheet] = useState(false);
@@ -260,6 +261,13 @@ export default function ChatPage() {
             )}
           </div>
         </div>
+        <button
+          onClick={() => signOut().then(() => router.replace("/"))}
+          className="size-9 rounded-lg flex items-center justify-center text-muted hover:text-danger hover:bg-danger/10 transition active:scale-90"
+          aria-label="Sair"
+        >
+          <LogOut className="size-4" />
+        </button>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scroll px-3 py-4">

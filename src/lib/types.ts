@@ -1,0 +1,175 @@
+export type Tone = "brother" | "sargento" | "nutella" | "low_profile";
+
+export type Goal =
+  | "hipertrofia"
+  | "emagrecimento"
+  | "definicao"
+  | "condicionamento"
+  | "manutencao";
+
+export type SubscriptionPlan = "free" | "basic" | "pro";
+
+export type ExperienceLevel = "iniciante" | "intermediario" | "avancado";
+
+export type Equipment =
+  | "academia"
+  | "casa"
+  | "halteres"
+  | "peso_corporal"
+  | "parque";
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  email: string;
+  phone?: string;
+  weightKg: number;
+  heightCm: number;
+  age: number;
+  goal: Goal;
+  experience: ExperienceLevel;
+  equipment: Equipment[];
+  injuries: string;
+  workType: string;
+  budgetFood: "apertado" | "ok" | "folgado";
+  dietRestrictions: string[];
+  cooksAtHome: boolean;
+  trainDays: number[]; // 0=dom .. 6=sab
+  trainDurationMin: number;
+  tone: Tone;
+  onboardingCompleted: boolean;
+  createdAt: string;
+}
+
+export interface Exercise {
+  id: string;
+  namePt: string;
+  muscleGroup: string;
+  equipment: string;
+  instructionsShort: string;
+  defaultRestSec: number;
+  /** emoji fallback when no GIF */
+  emoji: string;
+  gifUrl?: string;
+}
+
+export interface PlanExercise {
+  exerciseId: string;
+  sets: number;
+  reps: string;
+  restSec: number;
+  suggestedWeightKg?: number;
+  notes?: string;
+}
+
+export interface PlanDay {
+  weekday: number; // 0-6
+  label: string;
+  durationMin: number;
+  exercises: PlanExercise[];
+  isRest?: boolean;
+}
+
+export interface MealExample {
+  slot: string;
+  title: string;
+  items: string[];
+  swaps?: string[];
+}
+
+export interface NutritionPlan {
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  meals: MealExample[];
+  groceryList: string[];
+  notes: string;
+}
+
+export interface Plan {
+  id: string;
+  version: number;
+  workoutDays: PlanDay[];
+  nutrition: NutritionPlan;
+  createdAt: string;
+  source: "ai" | "user" | "coach";
+}
+
+export type MessageRole = "user" | "assistant" | "system";
+
+export type RichCardType =
+  | "workout"
+  | "meal_check"
+  | "insight"
+  | "plan_summary"
+  | "paywall";
+
+export interface RichCard {
+  type: RichCardType;
+  title: string;
+  body?: string;
+  cta?: string;
+  meta?: Record<string, string | number | boolean>;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: MessageRole;
+  content: string;
+  createdAt: string;
+  rich?: RichCard;
+  /** data URL comprimida (foto de refeição) */
+  imageDataUrl?: string;
+}
+
+export interface WorkoutSetLog {
+  exerciseId: string;
+  setIndex: number;
+  reps: number;
+  weightKg: number;
+  status: "completed" | "skipped";
+  completedAt: string;
+}
+
+export interface WorkoutSession {
+  id: string;
+  date: string;
+  label: string;
+  status: "in_progress" | "completed" | "partial" | "abandoned";
+  startedAt: string;
+  endedAt?: string;
+  sets: WorkoutSetLog[];
+  skippedExercises: string[];
+  planDayWeekday: number;
+}
+
+export interface MealLog {
+  id: string;
+  slot: string;
+  description: string;
+  adherence: "on_plan" | "partial" | "off";
+  loggedAt: string;
+  source: "text" | "chip" | "photo";
+}
+
+export interface BodyMetric {
+  id: string;
+  kind: "weight";
+  value: number;
+  measuredAt: string;
+}
+
+export interface AppState {
+  profile: UserProfile | null;
+  plan: Plan | null;
+  messages: ChatMessage[];
+  sessions: WorkoutSession[];
+  mealLogs: MealLog[];
+  metrics: BodyMetric[];
+  subscription: SubscriptionPlan;
+  activeWorkoutId: string | null;
+  lastOpenDate: string | null;
+  /** IA "digitando" — não persiste */
+  typing: boolean;
+}

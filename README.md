@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shape.ai — Web App (MVP)
 
-## Getting Started
+Personal de bolso: chat vivo + modo treino + nutri + evolução.
 
-First, run the development server:
+## Rodar agora
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+cd web
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### O que funciona (localStorage + APIs opcionais)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **Onboarding** conversacional (objetivo, rotina, tom, plano)
+2. **Redesign** do plano (“sou pobre…”, “sem agachamento…”)
+3. **Chat** com abertura contextual + 4 tons + typing + typewriter
+4. **Modo treino** com **mídia de exercício** (free-exercise-db), séries, descanso, wake lock
+5. **Foto do prato** (Pro) → `/api/vision/meal` se tiver key
+6. **Refeições** e **peso**
+7. **Evolução** (streak, gráficos, insights)
+8. Gate **Free / Básico / Pro** (demo no perfil)
+9. **PWA** (manifest + ícones) — “Adicionar à tela inicial”
+10. **Login Google** (quando Supabase configurado)
 
-## Learn More
+### LLM + Vision (opcional)
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cp .env.example .env.local
+# preencha OPENAI_API_KEY (ou DeepSeek via OPENAI_BASE_URL)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Sem key: coach **rule-based** (já usável). Vision cai em fallback.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Supabase
 
-## Deploy on Vercel
+1. Cria projeto Supabase  
+2. Roda `../supabase/migrations/001_init.sql`  
+3. Auth → Google provider + redirect `http://localhost:3000/auth/callback`  
+4. Preenche `NEXT_PUBLIC_SUPABASE_*` em `.env.local`  
+5. `/login` → Continuar com Google  
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 16 + React 19 + Tailwind 4  
+- Zustand (estado local MVP)  
+- Vercel AI SDK (chat + vision opcional)  
+- free-exercise-db (mídia)  
+- Supabase (schema + OAuth callback)
+
+## Specs do produto
+
+Ver pasta pai: `../README.md` e `../00-produto` …

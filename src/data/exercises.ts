@@ -1,0 +1,240 @@
+import type { Exercise } from "@/lib/types";
+
+/** Catálogo mínimo MVP — expandir com dataset open depois */
+export const EXERCISES: Exercise[] = [
+  {
+    id: "bench-press",
+    namePt: "Supino reto com barra",
+    muscleGroup: "peito",
+    equipment: "academia",
+    instructionsShort: "Cotovelos ~45°. Escápulas fixas. Controla a negativa.",
+    defaultRestSec: 90,
+    emoji: "🏋️",
+  },
+  {
+    id: "incline-dumbbell-press",
+    namePt: "Supino inclinado com halteres",
+    muscleGroup: "peito",
+    equipment: "halteres",
+    instructionsShort: "Banco 30–45°. Desce até peito, sobe sem bater.",
+    defaultRestSec: 90,
+    emoji: "🏋️",
+  },
+  {
+    id: "push-up",
+    namePt: "Flexão de braço",
+    muscleGroup: "peito",
+    equipment: "peso_corporal",
+    instructionsShort: "Corpo reto. Peito quase no chão. Core firme.",
+    defaultRestSec: 60,
+    emoji: "🤸",
+  },
+  {
+    id: "lat-pulldown",
+    namePt: "Puxada frontal",
+    muscleGroup: "costas",
+    equipment: "academia",
+    instructionsShort: "Puxa pro peito, cotovelos pra baixo. Não balança o tronco.",
+    defaultRestSec: 90,
+    emoji: "💪",
+  },
+  {
+    id: "barbell-row",
+    namePt: "Remada curvada",
+    muscleGroup: "costas",
+    equipment: "academia",
+    instructionsShort: "Coluna neutra. Puxa pro umbigo. Cotovelos colados.",
+    defaultRestSec: 90,
+    emoji: "💪",
+  },
+  {
+    id: "dumbbell-row",
+    namePt: "Remada unilateral com halter",
+    muscleGroup: "costas",
+    equipment: "halteres",
+    instructionsShort: "Apoia no banco. Puxa cotovelo pra trás sem girar tronco.",
+    defaultRestSec: 75,
+    emoji: "💪",
+  },
+  {
+    id: "pull-up",
+    namePt: "Barra fixa (ou australiana)",
+    muscleGroup: "costas",
+    equipment: "peso_corporal",
+    instructionsShort: "Peito pra barra. Se pesado, faz australiana ou negativa.",
+    defaultRestSec: 90,
+    emoji: "🔝",
+  },
+  {
+    id: "overhead-press",
+    namePt: "Desenvolvimento militar",
+    muscleGroup: "ombros",
+    equipment: "academia",
+    instructionsShort: "Core travado. Não arqueia lombar. Barra sobe em linha.",
+    defaultRestSec: 90,
+    emoji: "⬆️",
+  },
+  {
+    id: "lateral-raise",
+    namePt: "Elevação lateral",
+    muscleGroup: "ombros",
+    equipment: "halteres",
+    instructionsShort: "Cotovelo semi-flexionado. Sobe até ombro. Sem balanço.",
+    defaultRestSec: 45,
+    emoji: "🪽",
+  },
+  {
+    id: "squat",
+    namePt: "Agachamento livre",
+    muscleGroup: "pernas",
+    equipment: "academia",
+    instructionsShort: "Pés na largura do ombro. Joelho acompanha pé. Profundidade confortável.",
+    defaultRestSec: 120,
+    emoji: "🦵",
+  },
+  {
+    id: "goblet-squat",
+    namePt: "Agachamento goblet",
+    muscleGroup: "pernas",
+    equipment: "halteres",
+    instructionsShort: "Halter no peito. Desce sentando pra trás. Peito alto.",
+    defaultRestSec: 90,
+    emoji: "🦵",
+  },
+  {
+    id: "bodyweight-squat",
+    namePt: "Agachamento livre (peso corporal)",
+    muscleGroup: "pernas",
+    equipment: "peso_corporal",
+    instructionsShort: "Mesma mecânica do agachamento. Controla 3s na descida.",
+    defaultRestSec: 60,
+    emoji: "🦵",
+  },
+  {
+    id: "romanian-deadlift",
+    namePt: "Levantamento terra romeno",
+    muscleGroup: "posterior",
+    equipment: "academia",
+    instructionsShort: "Quadril pra trás. Coluna neutra. Sente o posterior.",
+    defaultRestSec: 100,
+    emoji: "🏋️",
+  },
+  {
+    id: "leg-press",
+    namePt: "Leg press",
+    muscleGroup: "pernas",
+    equipment: "academia",
+    instructionsShort: "Pés médios. Não trava joelho no topo. Controle total.",
+    defaultRestSec: 100,
+    emoji: "🦵",
+  },
+  {
+    id: "lunges",
+    namePt: "Afundo",
+    muscleGroup: "pernas",
+    equipment: "halteres",
+    instructionsShort: "Passo longo. Joelho de trás desce. Tronco ereto.",
+    defaultRestSec: 75,
+    emoji: "🚶",
+  },
+  {
+    id: "leg-curl",
+    namePt: "Mesa flexora",
+    muscleGroup: "posterior",
+    equipment: "academia",
+    instructionsShort: "Quadril colado. Flexiona sem levantar quadril.",
+    defaultRestSec: 60,
+    emoji: "🦵",
+  },
+  {
+    id: "calf-raise",
+    namePt: "Panturrilha em pé",
+    muscleGroup: "panturrilha",
+    equipment: "academia",
+    instructionsShort: "Amplitude total. Pausa no topo 1s.",
+    defaultRestSec: 45,
+    emoji: "👣",
+  },
+  {
+    id: "barbell-curl",
+    namePt: "Rosca direta",
+    muscleGroup: "biceps",
+    equipment: "academia",
+    instructionsShort: "Cotovelos fixos. Sem balançar o corpo.",
+    defaultRestSec: 60,
+    emoji: "💪",
+  },
+  {
+    id: "dumbbell-curl",
+    namePt: "Rosca alternada com halteres",
+    muscleGroup: "biceps",
+    equipment: "halteres",
+    instructionsShort: "Supina no caminho. Controla a descida.",
+    defaultRestSec: 60,
+    emoji: "💪",
+  },
+  {
+    id: "triceps-pushdown",
+    namePt: "Tríceps pulley",
+    muscleGroup: "triceps",
+    equipment: "academia",
+    instructionsShort: "Cotovelos colados no tronco. Estende até travar de leve.",
+    defaultRestSec: 60,
+    emoji: "💪",
+  },
+  {
+    id: "overhead-triceps",
+    namePt: "Tríceps francês com halter",
+    muscleGroup: "triceps",
+    equipment: "halteres",
+    instructionsShort: "Cotovelos pro teto. Desce atrás da cabeça com controle.",
+    defaultRestSec: 60,
+    emoji: "💪",
+  },
+  {
+    id: "plank",
+    namePt: "Prancha",
+    muscleGroup: "core",
+    equipment: "peso_corporal",
+    instructionsShort: "Corpo reto. Glúteo e abdômen contraídos. Respira.",
+    defaultRestSec: 45,
+    emoji: "🧱",
+  },
+  {
+    id: "dead-bug",
+    namePt: "Dead bug",
+    muscleGroup: "core",
+    equipment: "peso_corporal",
+    instructionsShort: "Lombar colada no chão. Estende braço e perna opostos.",
+    defaultRestSec: 45,
+    emoji: "🐛",
+  },
+  {
+    id: "hip-thrust",
+    namePt: "Elevação pélvica",
+    muscleGroup: "gluteo",
+    equipment: "academia",
+    instructionsShort: "Queixo no peito. Squeez glúteo no topo 1s.",
+    defaultRestSec: 90,
+    emoji: "🍑",
+  },
+];
+
+export function getExercise(id: string) {
+  return EXERCISES.find((e) => e.id === id);
+}
+
+export function exercisesForEquipment(
+  equipment: string[],
+  muscle: string
+): Exercise[] {
+  const prefer = equipment.includes("academia")
+    ? "academia"
+    : equipment.includes("halteres")
+      ? "halteres"
+      : "peso_corporal";
+
+  const pool = EXERCISES.filter((e) => e.muscleGroup === muscle);
+  const preferred = pool.filter((e) => e.equipment === prefer || e.equipment === "peso_corporal");
+  return preferred.length ? preferred : pool;
+}

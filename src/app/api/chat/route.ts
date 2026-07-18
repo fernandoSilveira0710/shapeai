@@ -12,7 +12,9 @@ export type ChatAction =
   | { type: "log_skip"; reason?: string }
   | { type: "finish_intake" }
   | { type: "set_schedule"; trainTime?: string; wantsReminders?: boolean }
-  | { type: "swap_food"; from: string; to: string };
+  | { type: "swap_food"; from: string; to: string }
+  | { type: "swap_workout_day"; withWeekday: number }
+  | { type: "log_past_workout"; date: string; note?: string };
 
 /**
  * Chat streaming + tools.
@@ -138,6 +140,30 @@ export async function POST(req: NextRequest) {
           execute: async ({ reason }) => {
             actions.push({ type: "log_skip", reason });
             return { ok: true };
+          },
+        }),
+        swap_workout_day: tool({
+          description:
+            "Troca o treino de HOJE pelo treino de outro dia da semana (ex.: usuário fez braço no domingo por fora e hoje quer perna). withWeekday = dia (0=dom..6=sáb) cujo treino será feito hoje.",
+          inputSchema: z.object({
+            withWeekday: z.number().min(0).max(6),
+            reason: z.string().optional().describe("justificativa do usuário"),
+          }),
+          execute: async ({ withWeekday }) => {
+            actions.push({ type: "swap_workout_day", withWeekday });
+            return { ok: true, message: "Treinos trocados no plano de hoje." };
+          },
+        }),
+        log_past_workout: tool({
+          description:
+            "Registra treino que o usuário fez e esqueceu de logar (ex.: 'treinei domingo e não marquei'). date em YYYY-MM-DD.",
+          inputSchema: z.object({
+            date: z.string().describe("YYYY-MM-DD do treino esquecido"),
+            note: z.string().optional().describe("o que ele treinou"),
+          }),
+          execute: async ({ date, note }) => {
+            actions.push({ type: "log_past_workout", date, note });
+            return { ok: true, message: `Treino de ${date} registrado.` };
           },
         }),
         swap_food: tool({

@@ -81,6 +81,7 @@ type Actions = {
   sendImageMessage: (dataUrl: string, caption?: string) => void;
   startWorkout: () => string | null;
   completeSet: (set: WorkoutSetLog) => void;
+  addWorkoutNote: (text: string) => void;
   skipExercise: (exerciseId: string) => void;
   finishWorkout: (status?: WorkoutSession["status"]) => void;
   logMeal: (
@@ -177,6 +178,55 @@ export const useAppStore = create<AppState & Actions>()(
                 title: `Plano v${next.version}`,
                 body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
               };
+            }
+          } else if (a.type === "swap_workout_day") {
+            const plan = get().plan;
+            if (plan) {
+              const todayWd = new Date().getDay();
+              const days = plan.workoutDays.map((d) => ({ ...d }));
+              const a1 = days.find((d) => d.weekday === todayWd);
+              const b1 = days.find((d) => d.weekday === a.withWeekday);
+              if (a1 && b1) {
+                const tmp = {
+                  label: a1.label,
+                  exercises: a1.exercises,
+                  durationMin: a1.durationMin,
+                  isRest: a1.isRest,
+                };
+                Object.assign(a1, {
+                  label: b1.label,
+                  exercises: b1.exercises,
+                  durationMin: b1.durationMin,
+                  isRest: b1.isRest,
+                });
+                Object.assign(b1, tmp);
+                set({
+                  plan: { ...plan, workoutDays: days, version: plan.version + 1 },
+                });
+              }
+            }
+          } else if (a.type === "log_past_workout") {
+            const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(a.date);
+            if (dateOk && a.date <= todayKey()) {
+              const wd = new Date(`${a.date}T12:00:00`).getDay();
+              set((st) => ({
+                sessions: [
+                  ...st.sessions,
+                  {
+                    id: uid(),
+                    date: a.date,
+                    label: a.note?.slice(0, 40) || "Treino avulso",
+                    status: "completed" as const,
+                    startedAt: `${a.date}T12:00:00.000Z`,
+                    endedAt: `${a.date}T13:00:00.000Z`,
+                    sets: [],
+                    skippedExercises: [],
+                    planDayWeekday: wd,
+                    feedback: a.note,
+                    feedbackAt: new Date().toISOString(),
+                  },
+                ],
+              }));
             }
           } else if (a.type === "swap_food") {
             const plan = get().plan;
@@ -543,7 +593,9 @@ export const useAppStore = create<AppState & Actions>()(
 
           const day = planDayForDate(s.plan);
           const workoutDoneToday = s.sessions.some(
-            (x) => x.date === today && x.status === "completed"
+            (x) =>
+              x.date === today &&
+              (x.status === "completed" || x.status === "partial")
           );
 
           // pendências do "personal vivo": feedback > peso 7d > medidas 14d > refeição
@@ -750,12 +802,29 @@ export const useAppStore = create<AppState & Actions>()(
             }
           }
 
-          // 2) bora explícito — abre treino na hora
+          // 2) bora explícito — abre treino na hora (ou segura se já treinou)
           if (
             /\bbora\b|vamos treinar|iniciar treino|come[cç]ar treino|partiu treino|^iniciar$|^treinar$/.test(
               lower
             )
           ) {
+            const doneToday = s0.sessions.find(
+              (x) =>
+                x.date === todayKey() &&
+                (x.status === "completed" || x.status === "partial")
+            );
+            if (doneToday) {
+              const nextTime = s0.profile?.trainTime ?? "no horário de sempre";
+              reply(
+                coachReply(
+                  tone,
+                  trimmed,
+                  "generic",
+                  `Treino de hoje (${doneToday.label}) já foi — músculo cresce no DESCANSO. Amanhã ${nextTime} a gente repete a dose. Se treinou outra coisa por fora, me conta que eu registro.`
+                )
+              );
+              return {};
+            }
             const id = get().startWorkout();
             reply(coachReply(tone, trimmed, "start_workout"), undefined, 280);
             return { navigateToWorkout: id ?? undefined };
@@ -826,9 +895,16 @@ export const useAppStore = create<AppState & Actions>()(
         },
 
         startWorkout: () => {
-          const { plan, activeWorkoutId } = get();
+          const { plan, activeWorkoutId, sessions } = get();
           if (activeWorkoutId) return activeWorkoutId;
           if (!plan) return null;
+          // já fechou treino hoje → corpo precisa de descanso, não de bis
+          const doneToday = sessions.some(
+            (s) =>
+              s.date === todayKey() &&
+              (s.status === "completed" || s.status === "partial")
+          );
+          if (doneToday) return null;
           const day = planDayForDate(plan);
           if (!day || day.isRest) return null;
           const session: WorkoutSession = {
@@ -855,6 +931,25 @@ export const useAppStore = create<AppState & Actions>()(
             sessions: st.sessions.map((sess) =>
               sess.id === activeWorkoutId
                 ? { ...sess, sets: [...sess.sets, setLog] }
+                : sess
+            ),
+          }));
+        },
+
+        addWorkoutNote: (text) => {
+          const { activeWorkoutId } = get();
+          const trimmed = text.trim();
+          if (!activeWorkoutId || !trimmed) return;
+          set((st) => ({
+            sessions: st.sessions.map((sess) =>
+              sess.id === activeWorkoutId
+                ? {
+                    ...sess,
+                    notes: [
+                      ...(sess.notes ?? []),
+                      { text: trimmed.slice(0, 200), at: new Date().toISOString() },
+                    ],
+                  }
                 : sess
             ),
           }));

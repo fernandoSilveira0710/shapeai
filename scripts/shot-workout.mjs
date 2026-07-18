@@ -55,5 +55,20 @@ await page.evaluate((s) => localStorage.setItem("shape-ai-v1", JSON.stringify(s)
 await page.goto("http://localhost:3000/workout/cur", { waitUntil: "networkidle0" });
 await new Promise((r) => setTimeout(r, 2500));
 await page.screenshot({ path: process.env.SHOT });
-console.log("ok");
+// diminui carga → vermelho
+await page.evaluate(() => {
+  const inputs = [...document.querySelectorAll('input[type=number]')];
+  const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  nativeSet.call(inputs[1], '10');
+  inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+});
+await new Promise((r) => setTimeout(r, 400));
+await page.screenshot({ path: process.env.SHOT_RED });
+// conclui série → overlay descanso com caixinha
+await page.evaluate(() => {
+  [...document.querySelectorAll('button')].find((b) => b.innerText.includes('Concluir série'))?.click();
+});
+await new Promise((r) => setTimeout(r, 800));
+await page.screenshot({ path: process.env.SHOT_REST });
+console.log('ok');
 await browser.close();

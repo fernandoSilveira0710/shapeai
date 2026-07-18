@@ -170,6 +170,8 @@ export interface WorkoutSession {
   /** resposta do "e aí, deu bom?" pós-treino */
   feedback?: string;
   feedbackAt?: string;
+  /** anotações feitas durante o treino (descanso): dor, sensação, etc. */
+  notes?: { text: string; at: string }[];
 }
 
 export interface MealLog {

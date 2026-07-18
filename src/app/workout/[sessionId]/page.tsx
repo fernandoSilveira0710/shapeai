@@ -17,6 +17,7 @@ export default function WorkoutPage() {
   const completeSet = useAppStore((s) => s.completeSet);
   const skipExercise = useAppStore((s) => s.skipExercise);
   const finishWorkout = useAppStore((s) => s.finishWorkout);
+  const addWorkoutNote = useAppStore((s) => s.addWorkoutNote);
   const profile = useAppStore((s) => s.profile);
 
   const session = sessions.find((s) => s.id === sessionId);
@@ -45,6 +46,8 @@ export default function WorkoutPage() {
   const [done, setDone] = useState(false);
   const [reps, setReps] = useState(10);
   const [weight, setWeight] = useState(20);
+  const [noteText, setNoteText] = useState("");
+  const [noteSaved, setNoteSaved] = useState(false);
   const restFiredRef = useRef(false);
 
   const current = exercises[exIndex];
@@ -119,9 +122,10 @@ export default function WorkoutPage() {
   }, [exIndex, setIndex, exercises.length, current?.sets]);
 
   // histórico desse exercício: últimas sessões + PR — progressão visível na hora
-  const { history, prKg } = useMemo(() => {
+  const { history, prKg, lastVals } = useMemo(() => {
     const exId = current?.exerciseId;
-    if (!exId) return { history: [], prKg: 0 };
+    if (!exId)
+      return { history: [], prKg: 0, lastVals: null as { w: number; r: number } | null };
     const past = sessions
       .filter(
         (s) =>
@@ -151,8 +155,35 @@ export default function WorkoutPage() {
         isPr: top.weightKg >= pr && pr > 0,
       };
     });
-    return { history: rows, prKg: pr };
+    // valores da última sessão — referência pra colorir os inputs de hoje
+    const lastSets = past[0]?.sets.filter(
+      (x) => x.exerciseId === exId && x.status === "completed"
+    );
+    const lastTop = lastSets?.length
+      ? lastSets.reduce((m, x) => (x.weightKg > m.weightKg ? x : m), lastSets[0])
+      : null;
+    return {
+      history: rows,
+      prKg: pr,
+      lastVals: lastTop ? { w: lastTop.weightKg, r: lastTop.reps } : null,
+    };
   }, [current?.exerciseId, sessions, sessionId]);
+
+  // verde = subiu vs última sessão · vermelho = caiu · neutro = igual/sem histórico
+  const weightColor = lastVals
+    ? weight > lastVals.w
+      ? "text-brand"
+      : weight < lastVals.w
+        ? "text-danger"
+        : ""
+    : "";
+  const repsColor = lastVals
+    ? reps > lastVals.r
+      ? "text-brand"
+      : reps < lastVals.r
+        ? "text-danger"
+        : ""
+    : "";
 
   function startRest(sec: number) {
     restFiredRef.current = false;
@@ -307,8 +338,11 @@ export default function WorkoutPage() {
               type="number"
               value={reps}
               onChange={(e) => setReps(Number(e.target.value))}
-              className="w-full bg-transparent text-center text-xl font-bold outline-none"
+              className={`w-full bg-transparent text-center text-xl font-bold outline-none transition-colors ${repsColor}`}
             />
+            {lastVals && (
+              <div className="text-[10px] text-muted">últ: {lastVals.r}</div>
+            )}
           </label>
           <label className="rounded-2xl bg-surface border border-border p-3 text-center">
             <div className="text-[11px] text-muted mb-1">Carga kg</div>
@@ -316,8 +350,11 @@ export default function WorkoutPage() {
               type="number"
               value={weight}
               onChange={(e) => setWeight(Number(e.target.value))}
-              className="w-full bg-transparent text-center text-xl font-bold outline-none"
+              className={`w-full bg-transparent text-center text-xl font-bold outline-none transition-colors ${weightColor}`}
             />
+            {lastVals && (
+              <div className="text-[10px] text-muted">últ: {lastVals.w}kg</div>
+            )}
           </label>
         </div>
 
@@ -405,6 +442,30 @@ export default function WorkoutPage() {
             </Button>
             <Button onClick={() => setRestEndsAt(null)}>Pular descanso</Button>
           </div>
+
+          {/* anotação rápida: dor, sensação, progressão — a IA lê no fim */}
+          <form
+            className="w-full max-w-xs mt-8 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!noteText.trim()) return;
+              addWorkoutNote(noteText);
+              setNoteText("");
+              setNoteSaved(true);
+              vibrate(10);
+              setTimeout(() => setNoteSaved(false), 2000);
+            }}
+          >
+            <input
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Anota algo: “senti dor no cotovelo”…"
+              className="flex-1 h-10 rounded-xl bg-surface border border-border px-3 text-sm outline-none focus:border-brand/60"
+            />
+            <Button type="submit" size="sm" variant="secondary" className="h-10">
+              {noteSaved ? "✓" : "Anotar"}
+            </Button>
+          </form>
         </div>
       )}
     </div>

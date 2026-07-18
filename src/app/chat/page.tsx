@@ -124,6 +124,7 @@ export default function ChatPage() {
   const logWeight = useAppStore((s) => s.logWeight);
   const signOut = useAppStore((s) => s.signOut);
   const approvePlan = useAppStore((s) => s.approvePlan);
+  const sessions = useAppStore((s) => s.sessions);
   const intakeQueue = useAppStore((s) => s.intakeQueue);
   const intakeIndex = useAppStore((s) => s.intakeIndex);
 
@@ -189,6 +190,12 @@ export default function ChatPage() {
         });
         vibrate(15);
         router.push(`/workout/${id}`);
+      } else if (workoutDoneToday) {
+        addMessage({
+          role: "assistant",
+          content:
+            "Hoje já foi, campeão — músculo cresce no descanso. Amanhã a gente repete a dose. Treinou algo por fora? Me conta que eu registro.",
+        });
       }
     }
     if (type === "meal_check") handleSend("já comi");
@@ -270,12 +277,16 @@ export default function ChatPage() {
 
   const { time } = nowParts();
   const day = plan ? planDayForDate(plan) : null;
+  const workoutDoneToday = sessions.some(
+    (s) =>
+      s.date === dayKey(0) && (s.status === "completed" || s.status === "partial")
+  );
   const intakeOpen = profile.intakeCompleted === false;
   const currentIntakeKey = intakeOpen ? intakeQueue[intakeIndex] ?? null : null;
   const chips = intakeOpen
     ? [...intakeChips(currentIntakeKey), "Depois a gente fala"]
     : ([
-        day && !day.isRest ? "Bora treinar" : null,
+        day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
         "Já almocei",
         "Registrar peso",
         "Como estou?",

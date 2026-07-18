@@ -90,6 +90,32 @@ export function buildContextPack(s: ContextPackInput): string {
         ? `Último feedback pós-treino (${lastFb.label}): "${lastFb.feedback}" — usa isso pra ajustar conversa e treino`
         : "";
     })(),
+    (() => {
+      // última sessão fechada: duração real vs prevista + notas de treino + comparação de carga
+      const lastDone = [...s.sessions]
+        .filter(
+          (x) => (x.status === "completed" || x.status === "partial") && x.endedAt
+        )
+        .sort((a, b) => (b.endedAt ?? "").localeCompare(a.endedAt ?? ""))[0];
+      if (!lastDone) return "";
+      const realMin = Math.round(
+        (new Date(lastDone.endedAt!).getTime() -
+          new Date(lastDone.startedAt).getTime()) /
+          60000
+      );
+      const planned = s.plan?.workoutDays.find(
+        (d) => d.weekday === lastDone.planDayWeekday
+      )?.durationMin;
+      const lines = [
+        `Última sessão (${lastDone.label}, ${lastDone.date}): ${realMin}min${planned ? ` (previsto ~${planned}min)` : ""}${planned && realMin < planned * 0.6 ? " — MUITO RÁPIDA, vale questionar concentração/descanso" : ""}`,
+      ];
+      if (lastDone.notes?.length) {
+        lines.push(
+          `Notas escritas DURANTE o treino: ${lastDone.notes.map((n) => `"${n.text}"`).join(" · ")}`
+        );
+      }
+      return lines.join("\n");
+    })(),
   ]
     .filter(Boolean)
     .join("\n");

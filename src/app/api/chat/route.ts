@@ -11,7 +11,8 @@ export type ChatAction =
   | { type: "redesign_plan"; instruction: string }
   | { type: "log_skip"; reason?: string }
   | { type: "finish_intake" }
-  | { type: "set_schedule"; trainTime?: string; wantsReminders?: boolean };
+  | { type: "set_schedule"; trainTime?: string; wantsReminders?: boolean }
+  | { type: "swap_food"; from: string; to: string };
 
 /**
  * Chat streaming + tools.
@@ -137,6 +138,20 @@ export async function POST(req: NextRequest) {
           execute: async ({ reason }) => {
             actions.push({ type: "log_skip", reason });
             return { ok: true };
+          },
+        }),
+        swap_food: tool({
+          description:
+            "Troca um alimento da dieta por um substituto equivalente (proteína/carbo similar). Use quando o usuário disser que não tem, acabou ou não gosta de um alimento. O app atualiza o plano e re-mostra o quadro.",
+          inputSchema: z.object({
+            from: z.string().describe("alimento a remover, ex: purê"),
+            to: z
+              .string()
+              .describe("substituto equivalente com porção, ex: batata cozida (150g)"),
+          }),
+          execute: async ({ from, to }) => {
+            actions.push({ type: "swap_food", from, to });
+            return { ok: true, message: `Trocado ${from} por ${to} no plano.` };
           },
         }),
         set_schedule: tool({

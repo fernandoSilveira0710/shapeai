@@ -50,7 +50,12 @@ export function buildContextPack(s: ContextPackInput): string {
         : `Treino de hoje: ${day.label} (${day.exercises.length} exercícios, ~${day.durationMin}min) · já feito? ${workoutDoneToday ? "SIM" : "NÃO"}`
       : "Sem plano de treino",
     s.plan
-      ? `Dieta: ~${s.plan.nutrition.kcal} kcal · P${s.plan.nutrition.proteinG}g C${s.plan.nutrition.carbsG}g G${s.plan.nutrition.fatG}g · plano v${s.plan.version}`
+      ? `Dieta: ~${s.plan.nutrition.kcal} kcal · P${s.plan.nutrition.proteinG}g C${s.plan.nutrition.carbsG}g G${s.plan.nutrition.fatG}g · plano v${s.plan.version} · ${s.plan.approvedAt ? "APROVADO pelo usuário" : "ainda NÃO aprovado"}`
+      : "",
+    s.plan
+      ? `Opções de refeição atuais:\n${s.plan.nutrition.meals
+          .map((m) => `${m.title}: ${m.items.join(" | ")}`)
+          .join("\n")}`
       : "",
     s.plan
       ? `Refeições modelo: ${s.plan.nutrition.meals.map((m) => `${m.title}: ${m.items[0]}`).join(" | ")}`

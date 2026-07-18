@@ -111,6 +111,8 @@ export interface Plan {
   nutrition: NutritionPlan;
   createdAt: string;
   source: "ai" | "user" | "coach";
+  /** usuário bateu o martelo nessa versão */
+  approvedAt?: string;
 }
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -123,7 +125,8 @@ export type RichCardType =
   | "paywall"
   | "week_plan"
   | "diet_plan"
-  | "tech_read";
+  | "tech_read"
+  | "approve_plan";
 
 export interface RichCard {
   type: RichCardType;

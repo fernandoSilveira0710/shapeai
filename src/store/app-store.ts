@@ -90,6 +90,7 @@ type Actions = {
     source?: MealLog["source"]
   ) => void;
   logWeight: (kg: number) => void;
+  approvePlan: () => void;
   resetAll: () => void;
   signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
@@ -177,6 +178,57 @@ export const useAppStore = create<AppState & Actions>()(
                 body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
               };
             }
+          } else if (a.type === "swap_food") {
+            const plan = get().plan;
+            if (plan) {
+              const rx = new RegExp(
+                a.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/[eé]/gi, "[eé]"),
+                "gi"
+              );
+              let touched = false;
+              const meals = plan.nutrition.meals.map((meal) => {
+                const items = meal.items.map((op) => {
+                  if (rx.test(op)) {
+                    touched = true;
+                    return op.replace(rx, a.to);
+                  }
+                  return op;
+                });
+                return { ...meal, items };
+              });
+              if (touched) {
+                set({
+                  plan: {
+                    ...plan,
+                    nutrition: { ...plan.nutrition, meals },
+                    version: plan.version + 1,
+                    source: "ai",
+                    approvedAt: undefined,
+                  },
+                });
+                // re-mostra o quadro atualizado + pede aprovação de novo
+                const prof = get().profile;
+                const updated = get().plan;
+                if (prof && updated) {
+                  setTimeout(() => {
+                    get().addMessage({
+                      role: "assistant",
+                      content: "Ajustei — ficou assim:",
+                      rich: buildDietCard(prof, updated),
+                    });
+                    get().addMessage({
+                      role: "assistant",
+                      content: "",
+                      rich: {
+                        type: "approve_plan",
+                        title: `Fechou assim? (plano v${updated.version})`,
+                      },
+                    });
+                    void get().syncToCloud();
+                  }, 700);
+                }
+              }
+            }
           } else if (a.type === "set_schedule") {
             const p = get().profile;
             if (p) {
@@ -220,8 +272,18 @@ export const useAppStore = create<AppState & Actions>()(
                       "Se algum dia, horário ou refeição não encaixa na tua real, fala que eu remonto na hora.",
                     rich: buildTechReadCard(prof, plan),
                   });
-                  void get().syncToCloud();
                 }, 2100);
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content: "",
+                    rich: {
+                      type: "approve_plan",
+                      title: `Fechou assim? (plano v${plan.version})`,
+                    },
+                  });
+                  void get().syncToCloud();
+                }, 2800);
               }
             }
           } else if (a.type === "log_skip") {
@@ -898,6 +960,28 @@ export const useAppStore = create<AppState & Actions>()(
             measuredAt: new Date().toISOString(),
           };
           set((st) => ({ metrics: [...st.metrics, m] }));
+        },
+
+        approvePlan: () => {
+          const { plan, profile } = get();
+          if (!plan || !profile) return;
+          set({ plan: { ...plan, approvedAt: new Date().toISOString() } });
+          const tone = profile.tone;
+          get().addMessage({ role: "user", content: "Fechou, aprovo ✅" });
+          get().addMessage({
+            role: "system",
+            content: `Plano v${plan.version} aprovado`,
+          });
+          reply(
+            coachReply(
+              tone,
+              "",
+              "plan_ok",
+              undefined
+            ),
+            undefined,
+            500
+          );
         },
 
         updateTone: (tone) => {

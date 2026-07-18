@@ -113,42 +113,58 @@ function buildNutrition(
     /lactose|leite/i.test(r)
   );
 
+  // porções em gramas escaladas pelo alvo calórico (base ~2800 kcal)
+  const f = Math.min(1.4, Math.max(0.7, kcal / 2800));
+  const g = (base: number) => `${Math.round((base * f) / 5) * 5}g`;
+
   // 2-3 opções por refeição — usuário alterna, não come igual todo dia
   const breakfastOptions = noLactose
-    ? ["Ovos mexidos (3) + pão", "Tapioca + ovo + café", "Banana + pasta de amendoim + café"]
+    ? [
+        `Ovos mexidos (3) + pão (${g(50)})`,
+        `Tapioca (${g(60)}) + ovo (2) + café`,
+        `Banana (1) + pasta de amendoim (${g(20)}) + café`,
+      ]
     : cheap
-      ? ["Ovos (2) + aveia com leite", "Pão francês + ovo + café", "Vitamina de banana + aveia"]
-      : ["Iogurte grego + aveia + banana", "Ovos mexidos + pão + fruta", "Tapioca + ovo + café"];
+      ? [
+          `Ovos (2) + aveia (${g(40)}) com leite`,
+          `Pão francês (1) + ovo (2) + café`,
+          `Vitamina: banana + aveia (${g(40)}) + leite`,
+        ]
+      : [
+          `Iogurte grego (${g(170)}) + aveia (${g(40)}) + banana`,
+          `Ovos mexidos (3) + pão (${g(50)}) + fruta`,
+          `Tapioca (${g(60)}) + ovo (2) + café`,
+        ];
 
   const lunchOptions = cheap
     ? [
-        "Arroz, feijão, frango desfiado, salada",
-        "Arroz, feijão, ovos (3), legumes",
-        "Macarrão + atum/sardinha + salada",
+        `Arroz (${g(150)}), feijão (${g(100)}), frango desfiado (${g(120)}), salada`,
+        `Arroz (${g(150)}), feijão (${g(100)}), ovos (3), legumes`,
+        `Macarrão (${g(120)}) + atum (1 lata) + salada`,
       ]
     : [
-        "Arroz, feijão, patinho ou frango, legumes",
-        "Arroz, feijão, peixe grelhado, salada",
-        "Arroz, frango desfiado, purê, legumes",
+        `Arroz (${g(150)}), feijão (${g(100)}), patinho ou frango (${g(150)}), legumes`,
+        `Arroz (${g(150)}), feijão (${g(100)}), peixe grelhado (${g(170)}), salada`,
+        `Arroz (${g(150)}), frango desfiado (${g(150)}), batata (${g(120)}), legumes`,
       ];
 
   const dinnerOptions = cheap
     ? [
-        "Batata doce ou arroz + ovos/atum + salada",
-        "Sopa de legumes + frango desfiado",
-        "Cuscuz + ovo + queijo (se rolar)",
+        `Batata doce (${g(200)}) ou arroz + ovos (2-3)/atum + salada`,
+        `Sopa de legumes + frango desfiado (${g(120)})`,
+        `Cuscuz (${g(100)}) + ovo (2) + queijo (se rolar)`,
       ]
     : [
-        "Macarrão integral + frango + legumes",
-        "Omelete caprichada + arroz + salada",
-        "Peixe + purê + legumes",
+        `Macarrão integral (${g(120)}) + frango (${g(150)}) + legumes`,
+        `Omelete (3 ovos) + arroz (${g(100)}) + salada`,
+        `Peixe (${g(170)}) + batata (${g(150)}) + legumes`,
       ];
 
   const snackOptions = noLactose
-    ? ["Banana + pasta de amendoim + café", "Mix de castanhas + fruta"]
+    ? [`Banana + pasta de amendoim (${g(20)}) + café`, `Mix de castanhas (${g(30)}) + fruta`]
     : cheap
-      ? ["Pão com ovo", "Iogurte + banana", "Fruta + café"]
-      : ["Whey + fruta", "Iogurte grego + granola", "Sanduíche natural"];
+      ? [`Pão (1) com ovo (2)`, `Iogurte (1) + banana`, `Fruta + café`]
+      : [`Whey (30g) + fruta`, `Iogurte grego (${g(170)}) + granola (${g(30)})`, `Sanduíche natural`];
 
   const meals = [
     {

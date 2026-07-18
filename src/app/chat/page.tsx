@@ -123,6 +123,7 @@ export default function ChatPage() {
   const addMessage = useAppStore((s) => s.addMessage);
   const logWeight = useAppStore((s) => s.logWeight);
   const signOut = useAppStore((s) => s.signOut);
+  const approvePlan = useAppStore((s) => s.approvePlan);
   const intakeQueue = useAppStore((s) => s.intakeQueue);
   const intakeIndex = useAppStore((s) => s.intakeIndex);
 
@@ -427,6 +428,40 @@ export default function ChatPage() {
                         />
                       ) : m.rich.type === "tech_read" ? (
                         <TechReadCard card={m.rich} />
+                      ) : m.rich.type === "approve_plan" ? (
+                        <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-brand/40 bg-brand/5 p-3.5 animate-rise">
+                          <div className="text-sm font-semibold mb-3">
+                            {m.rich.title}
+                          </div>
+                          {plan?.approvedAt ? (
+                            <p className="text-xs text-muted">
+                              ✅ Aprovado — agora é execução.
+                            </p>
+                          ) : (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => {
+                                  vibrate(20);
+                                  approvePlan();
+                                }}
+                              >
+                                ✓ Fechou, aprovo
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="flex-1"
+                                onClick={() =>
+                                  askInComposer("Quero ajustar uma coisa: ")
+                                }
+                              >
+                                Quero ajustar
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div
                           className={cn(

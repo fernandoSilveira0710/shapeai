@@ -13,6 +13,8 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { getExercise } from "@/data/exercises";
+import { getExerciseMedia } from "@/data/exercise-media";
+import { ExerciseMedia } from "@/components/exercise-media";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
 import { TabBar } from "@/components/tab-bar";
 import { Button, Chip, Sheet, TypingDots } from "@/components/ui";
@@ -130,6 +132,8 @@ export default function ChatPage() {
   const [planSheet, setPlanSheet] = useState<
     null | { kind: "day"; weekday: number } | { kind: "meal"; slot: string }
   >(null);
+  /** exercício em preview dentro do sheet do dia (GIF + detalhes) */
+  const [exPreview, setExPreview] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -588,12 +592,17 @@ export default function ChatPage() {
       {/* Sheet de detalhe: dia de treino ou refeição — sai do "perdido no chat" */}
       <Sheet
         open={!!planSheet}
-        onClose={() => setPlanSheet(null)}
+        onClose={() => {
+          setPlanSheet(null);
+          setExPreview(null);
+        }}
         title={
           planSheet?.kind === "day"
-            ? `${WEEKDAY_LABELS[planSheet.weekday]} · ${
-                plan?.workoutDays.find((d) => d.weekday === planSheet.weekday)?.label ?? ""
-              }`
+            ? exPreview
+              ? (getExercise(exPreview)?.namePt ?? "Exercício")
+              : `${WEEKDAY_LABELS[planSheet.weekday]} · ${
+                  plan?.workoutDays.find((d) => d.weekday === planSheet.weekday)?.label ?? ""
+                }`
             : planSheet?.kind === "meal"
               ? (plan?.nutrition.meals.find((m) => m.slot === planSheet.slot)?.title ?? "Refeição")
               : undefined
@@ -604,16 +613,85 @@ export default function ChatPage() {
           (() => {
             const d = plan.workoutDays.find((x) => x.weekday === planSheet.weekday);
             if (!d || d.isRest) return <p className="text-sm text-muted">Dia de descanso.</p>;
+
+            // ——— preview do exercício: GIF + séries + instrução ———
+            if (exPreview) {
+              const pe = d.exercises.find((e) => e.exerciseId === exPreview);
+              const ex = getExercise(exPreview);
+              if (!pe || !ex) return null;
+              return (
+                <div className="space-y-3 max-h-[62dvh] overflow-y-auto">
+                  <ExerciseMedia
+                    exerciseId={exPreview}
+                    emoji={ex.emoji}
+                    muscle={ex.muscleGroup}
+                  />
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-surface border border-border p-2">
+                      <div className="text-lg font-bold">{pe.sets}</div>
+                      <div className="text-[10px] text-muted">séries</div>
+                    </div>
+                    <div className="rounded-xl bg-surface border border-border p-2">
+                      <div className="text-lg font-bold">{pe.reps}</div>
+                      <div className="text-[10px] text-muted">reps</div>
+                    </div>
+                    <div className="rounded-xl bg-surface border border-border p-2">
+                      <div className="text-lg font-bold">{pe.restSec}s</div>
+                      <div className="text-[10px] text-muted">descanso</div>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted">{ex.instructionsShort}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => setExPreview(null)}
+                    >
+                      ← Voltar
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() =>
+                        askInComposer(`Não tenho como fazer ${ex.namePt}, o que uso no lugar? `)
+                      }
+                    >
+                      Trocar esse
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
+
+            // ——— lista com thumbnail — tap abre o preview ———
             return (
-              <div className="space-y-1.5 max-h-[50dvh] overflow-y-auto">
+              <div className="space-y-1.5 max-h-[55dvh] overflow-y-auto">
                 {d.exercises.map((e, i) => {
                   const ex = getExercise(e.exerciseId);
+                  const media = getExerciseMedia(e.exerciseId);
                   return (
-                    <div
+                    <button
                       key={`${e.exerciseId}-${i}`}
-                      className="flex items-center gap-3 rounded-xl bg-surface border border-border px-3 py-2.5"
+                      type="button"
+                      onClick={() => {
+                        vibrate(8);
+                        setExPreview(e.exerciseId);
+                      }}
+                      className="w-full flex items-center gap-3 rounded-xl bg-surface border border-border px-3 py-2.5 text-left transition hover:border-brand/40 active:scale-[0.99]"
                     >
-                      <span className="text-xl">{ex?.emoji ?? "🏋️"}</span>
+                      {media ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={media.thumbUrl}
+                          alt=""
+                          loading="lazy"
+                          className="size-11 shrink-0 rounded-lg object-cover bg-elevated"
+                        />
+                      ) : (
+                        <span className="size-11 shrink-0 rounded-lg bg-elevated flex items-center justify-center text-xl">
+                          {ex?.emoji ?? "🏋️"}
+                        </span>
+                      )}
                       <span className="flex-1 min-w-0">
                         <span className="block text-sm font-medium truncate">
                           {ex?.namePt ?? e.exerciseId}
@@ -622,7 +700,8 @@ export default function ChatPage() {
                           {e.sets}×{e.reps} · descanso {e.restSec}s
                         </span>
                       </span>
-                    </div>
+                      <ChevronRight className="size-4 text-muted shrink-0" />
+                    </button>
                   );
                 })}
                 <Button

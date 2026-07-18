@@ -70,12 +70,17 @@ await page.goto("http://localhost:3000/chat", { waitUntil: "networkidle0" });
 await new Promise((r) => setTimeout(r, 1500));
 await page.evaluate(() => { const el = document.querySelector(".chat-scroll"); if (el) el.scrollTop = 0; });
 await page.screenshot({ path: process.env.SHOT1 });
-// abre sheet do almoço
 await page.evaluate(() => {
   const btns = [...document.querySelectorAll("button")];
-  btns.find((b) => b.innerText.includes("Almoço"))?.click();
+  btns.find((b) => b.innerText.includes("Push") || b.innerText.includes("Seg"))?.click();
 });
 await new Promise((r) => setTimeout(r, 700));
 await page.screenshot({ path: process.env.SHOT2 });
-console.log("shots ok");
+await page.evaluate(() => {
+  const btns = [...document.querySelectorAll('button')];
+  btns.find((b) => b.innerText.includes('Supino'))?.click();
+});
+await new Promise((r) => setTimeout(r, 2500));
+await page.screenshot({ path: process.env.SHOT3 });
+console.log('shots ok');
 await browser.close();

@@ -32,15 +32,18 @@ export function ExerciseMedia({
       )}
     >
       {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={exerciseId}
-          src={src}
-          alt=""
-          className="absolute inset-0 size-full object-cover object-center animate-fade-in"
-          onError={() => setFailed(true)}
-          draggable={false}
-        />
+        // fundo branco = fundo dos GIFs do dataset; contain não corta o boneco
+        <div className="absolute inset-0 bg-white flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={exerciseId}
+            src={src}
+            alt=""
+            className="size-full object-contain animate-fade-in"
+            onError={() => setFailed(true)}
+            draggable={false}
+          />
+        </div>
       ) : (
         <>
           <span className="text-7xl">{emoji}</span>

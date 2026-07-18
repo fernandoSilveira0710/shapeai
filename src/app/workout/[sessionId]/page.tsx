@@ -118,6 +118,42 @@ export default function WorkoutPage() {
     return ((exIndex + (setIndex + 1) / (current?.sets || 1)) / exercises.length) * 100;
   }, [exIndex, setIndex, exercises.length, current?.sets]);
 
+  // histórico desse exercício: últimas sessões + PR — progressão visível na hora
+  const { history, prKg } = useMemo(() => {
+    const exId = current?.exerciseId;
+    if (!exId) return { history: [], prKg: 0 };
+    const past = sessions
+      .filter(
+        (s) =>
+          s.id !== sessionId &&
+          s.sets.some((x) => x.exerciseId === exId && x.status === "completed")
+      )
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    let pr = 0;
+    for (const s of past) {
+      for (const x of s.sets) {
+        if (x.exerciseId === exId && x.status === "completed" && x.weightKg > pr) {
+          pr = x.weightKg;
+        }
+      }
+    }
+    const rows = past.slice(0, 3).map((s) => {
+      const sets = s.sets.filter(
+        (x) => x.exerciseId === exId && x.status === "completed"
+      );
+      const top = sets.reduce((m, x) => (x.weightKg > m.weightKg ? x : m), sets[0]);
+      const [, mo, d] = s.date.split("-");
+      return {
+        id: s.id,
+        date: `${d}/${mo}`,
+        top: `${top.weightKg}kg × ${top.reps}`,
+        nSets: sets.length,
+        isPr: top.weightKg >= pr && pr > 0,
+      };
+    });
+    return { history: rows, prKg: pr };
+  }, [current?.exerciseId, sessions, sessionId]);
+
   function startRest(sec: number) {
     restFiredRef.current = false;
     setRestTotal(sec);
@@ -283,6 +319,38 @@ export default function WorkoutPage() {
               className="w-full bg-transparent text-center text-xl font-bold outline-none"
             />
           </label>
+        </div>
+
+        {/* progressão do exercício — o espaço vazio agora conta tua história */}
+        <div className="rounded-2xl bg-surface border border-border p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+              Tua progressão
+            </span>
+            {prKg > 0 && (
+              <span className="rounded-full bg-brand/15 text-brand text-[11px] font-bold px-2 py-0.5">
+                PR {prKg}kg
+              </span>
+            )}
+          </div>
+          {history.length === 0 ? (
+            <p className="text-sm text-muted">
+              Primeira vez nesse exercício — hoje vira tua baseline. 📈
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {history.map((h) => (
+                <li key={h.id} className="flex items-center gap-2 text-sm">
+                  <span className="w-12 shrink-0 text-[11px] text-muted tabular-nums">
+                    {h.date}
+                  </span>
+                  <span className="flex-1 font-medium tabular-nums">{h.top}</span>
+                  <span className="text-[11px] text-muted">{h.nSets} séries</span>
+                  {h.isPr && <span className="text-brand text-xs">🔥</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

@@ -155,6 +155,15 @@ export const useAppStore = create<AppState & Actions>()(
         }, delay);
       }
 
+      /** remove cards de plano obsoletos do chat — só o quadro atual fica visível */
+      function pruneOldPlanCards(kinds: string[]) {
+        set((st) => ({
+          messages: st.messages.filter(
+            (m) => !(m.rich && kinds.includes(m.rich.type))
+          ),
+        }));
+      }
+
       function applyActions(actions: ChatAction[]): { navigateToWorkout?: string; rich?: RichCard } {
         let navigateToWorkout: string | undefined;
         let rich: RichCard | undefined;
@@ -178,6 +187,27 @@ export const useAppStore = create<AppState & Actions>()(
                 title: `Plano v${next.version}`,
                 body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
               };
+              // quadro velho confunde — some; o novo entra com pedido de aprovação
+              pruneOldPlanCards(["week_plan", "diet_plan", "approve_plan"]);
+              const prof = get().profile;
+              if (prof) {
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content: "Semana remontada:",
+                    rich: buildWeekPlanCard(prof, next),
+                  });
+                  get().addMessage({
+                    role: "assistant",
+                    content: "",
+                    rich: {
+                      type: "approve_plan",
+                      title: `Fechou assim? (plano v${next.version})`,
+                    },
+                  });
+                  void get().syncToCloud();
+                }, 800);
+              }
             }
           } else if (a.type === "swap_workout_day") {
             const plan = get().plan;
@@ -257,6 +287,7 @@ export const useAppStore = create<AppState & Actions>()(
                   },
                 });
                 // re-mostra o quadro atualizado + pede aprovação de novo
+                pruneOldPlanCards(["diet_plan", "approve_plan"]);
                 const prof = get().profile;
                 const updated = get().plan;
                 if (prof && updated) {

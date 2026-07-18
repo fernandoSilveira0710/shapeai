@@ -11,12 +11,16 @@ await page.goto("http://localhost:3000/onboarding", { waitUntil: "networkidle0" 
 await new Promise((r) => setTimeout(r, 800));
 await page.type("input", "Jão", { delay: 10 });
 await page.click("input[type=checkbox]");
+await page.screenshot({ path: process.env.SHOT1 });
+let shot3done=false;
 for (let i = 0; i < 6; i++) {
   await page.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => /Continuar|Gerar meu plano/.test(x.innerText) && !x.disabled);
     b?.click();
   });
   await new Promise((r) => setTimeout(r, 500));
+if (i === 1) await page.screenshot({ path: process.env.SHOT2 });
+if (i === 2) await page.screenshot({ path: process.env.SHOT3 });
 }
 // step 6: gerar
 await page.evaluate(() => {

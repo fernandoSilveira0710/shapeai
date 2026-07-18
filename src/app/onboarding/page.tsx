@@ -166,10 +166,13 @@ export default function OnboardingPage() {
         <ProgressBar value={progress} />
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+      <div className="flex-1 overflow-y-auto px-5 py-6">
+        <div className="min-h-full flex flex-col">
+          <div className="my-auto w-full space-y-5 pb-4">
         {step === 0 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Bora te conhecer</h1>
+            <div className="text-4xl" aria-hidden="true">👋</div>
+            <h1 className="text-3xl font-bold tracking-tight">Bora te conhecer</h1>
             <p className="text-muted text-sm">
               Isso vira a base do teu personal. Dá pra mudar depois.
             </p>
@@ -199,7 +202,8 @@ export default function OnboardingPage() {
 
         {step === 1 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Corpo agora</h1>
+            <div className="text-4xl" aria-hidden="true">📏</div>
+            <h1 className="text-3xl font-bold tracking-tight">Corpo agora</h1>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label>Peso (kg)</Label>
@@ -228,7 +232,8 @@ export default function OnboardingPage() {
 
         {step === 2 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Qual teu objetivo?</h1>
+            <div className="text-4xl" aria-hidden="true">🎯</div>
+            <h1 className="text-3xl font-bold tracking-tight">Qual teu objetivo?</h1>
             <div className="space-y-2">
               {GOALS.map((g) => (
                 <button
@@ -251,7 +256,8 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Experiência e equipamento</h1>
+            <div className="text-4xl" aria-hidden="true">🏋️</div>
+            <h1 className="text-3xl font-bold tracking-tight">Experiência e equipamento</h1>
             <div>
               <Label>Nível</Label>
               <div className="flex flex-wrap gap-2">
@@ -295,7 +301,8 @@ export default function OnboardingPage() {
 
         {step === 4 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Tua rotina real</h1>
+            <div className="text-4xl" aria-hidden="true">🧭</div>
+            <h1 className="text-3xl font-bold tracking-tight">Tua rotina real</h1>
             <p className="text-sm text-muted">
               Plano bom respeita o dia que você tem — não o ideal do Instagram.
             </p>
@@ -353,7 +360,8 @@ export default function OnboardingPage() {
 
         {step === 5 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Grade de treino</h1>
+            <div className="text-4xl" aria-hidden="true">📅</div>
+            <h1 className="text-3xl font-bold tracking-tight">Grade de treino</h1>
             <div>
               <Label>Quais dias?</Label>
               <div className="flex flex-wrap gap-2">
@@ -379,7 +387,8 @@ export default function OnboardingPage() {
 
         {step === 6 && (
           <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Tom do teu personal</h1>
+            <div className="text-4xl" aria-hidden="true">🎙️</div>
+            <h1 className="text-3xl font-bold tracking-tight">Tom do teu personal</h1>
             <p className="text-sm text-muted">Isso muda a cobrança — não a ciência do plano.</p>
             <div className="space-y-2">
               {(Object.keys(TONE_META) as Tone[]).map((t) => (
@@ -417,6 +426,8 @@ export default function OnboardingPage() {
             </p>
           </section>
         )}
+      </div>
+        </div>
       </div>
 
       <footer className="p-5 border-t border-border space-y-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">

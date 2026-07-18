@@ -26,6 +26,7 @@ import type { ChatAction } from "@/app/api/chat/route";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
 import { computePendings } from "@/lib/pendings";
+import { requestReminderPermission } from "@/lib/reminders";
 import {
   buildDietCard,
   buildTechReadCard,
@@ -320,6 +321,26 @@ export const useAppStore = create<AppState & Actions>()(
                   wantsReminders: a.wantsReminders ?? p.wantsReminders,
                 },
               });
+              // disse "sim" pro lembrete → pede permissão do browser na hora
+              if (a.wantsReminders) {
+                void requestReminderPermission().then((status) => {
+                  const prof = get().profile;
+                  const time = prof?.trainTime ? ` ${prof.trainTime}` : "";
+                  if (status === "granted") {
+                    get().addMessage({
+                      role: "system",
+                      content: `🔔 Lembretes ativados —${time} nos dias de treino`,
+                    });
+                  } else if (status === "denied") {
+                    get().addMessage({
+                      role: "assistant",
+                      content:
+                        "Teu navegador bloqueou as notificações. Libera no cadeado da barra de endereço que eu passo a te cutucar no horário.",
+                    });
+                  }
+                  void get().syncToCloud();
+                });
+              }
             }
           } else if (a.type === "finish_intake") {
             const p = get().profile;

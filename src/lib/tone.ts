@@ -36,7 +36,16 @@ type OpeningCtx = {
   missedYesterday: boolean;
   pendingWeight: boolean;
   mealDue?: string;
+  /** treino fechado sem feedback — puxa assunto primeiro */
+  pendingFeedbackLabel?: string;
+  /** medidas 14d+ vencidas */
+  pendingMeasures?: boolean;
 };
+
+/** variação leve pra não soar robô */
+function pick<T>(...opts: T[]): T {
+  return opts[Math.floor(Math.random() * opts.length)];
+}
 
 export function buildOpening(ctx: OpeningCtx): string {
   const { time, weekday, hour } = nowParts();
@@ -54,6 +63,22 @@ export function buildOpening(ctx: OpeningCtx): string {
         return low;
     }
   };
+
+  // 0) puxar assunto pós-treino vem antes de tudo — personal de verdade pergunta
+  if (ctx.pendingFeedbackLabel) {
+    return say(
+      pick(
+        `E aí ${n}, aquele ${ctx.pendingFeedbackLabel} — deu bom? Corpo respondeu ou tá se arrastando hoje?`,
+        `${n}! Fala a real do treino de ${ctx.pendingFeedbackLabel}: curtiu, sofreu, ficou dolorido onde?`
+      ),
+      `${n.toUpperCase()}. RELATÓRIO DO ${ctx.pendingFeedbackLabel?.toUpperCase()}: COMO O CORPO RESPONDEU? DOR? FADIGA? FALA.`,
+      pick(
+        `Oi ${n} 💛 Como você ficou depois do ${ctx.pendingFeedbackLabel}? Dolorido bom ou cansaço demais?`,
+        `${n}! Me conta do ${ctx.pendingFeedbackLabel} de ontem — como o corpo acordou hoje?`
+      ),
+      `${n}. Treino ${ctx.pendingFeedbackLabel}: como foi? Alguma dor?`
+    );
+  }
 
   if (ctx.missedYesterday && ctx.hasWorkoutToday && !ctx.workoutDoneToday) {
     return say(
@@ -93,10 +118,22 @@ export function buildOpening(ctx: OpeningCtx): string {
 
   if (ctx.pendingWeight) {
     return say(
-      `${weekday} ${time}. Semana nova, balança. Manda o número (mesmo horário se der).`,
+      pick(
+        `${weekday} ${time}. Semana nova, balança. Manda o número (mesmo horário se der).`,
+        `${time}, ${n}. Faz tempo que a balança não fala comigo. Sobe nela e me manda o número.`
+      ),
       `${time}. PESAGEM SEMANAL. NÚMERO. AGORA.`,
       `Oi! 🌿 Dia de olhar o peso com carinho — sem drama. Pode me mandar?`,
       `${time}. Peso da semana?`
+    );
+  }
+
+  if (ctx.pendingMeasures) {
+    return say(
+      `${n}, balança mente às vezes — fita métrica não. Pega uma e me manda: cintura, peito, braço e coxa (cm). Tipo "cintura 84, braço 36".`,
+      `${time}. MEDIDAS VENCIDAS. FITA MÉTRICA: CINTURA, PEITO, BRAÇO, COXA. REPORTA EM CM.`,
+      `${n}, que tal tirar as medidas hoje? 🌸 Cintura, peito, braço e coxa — é onde o progresso aparece antes da balança.`,
+      `${n}. Medidas do mês: cintura, peito, braço, coxa. Manda em cm.`
     );
   }
 

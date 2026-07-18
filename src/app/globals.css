@@ -67,13 +67,38 @@ body {
   }
 }
 
-/* scrollbar thin */
-.chat-scroll::-webkit-scrollbar {
-  width: 4px;
+/* scrollbars — tema dark em tudo (Windows mostra scrollbar sempre) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
 }
-.chat-scroll::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
   border-radius: 4px;
+}
+
+/* esconde scrollbar de verdade (chips, carrosséis) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* textarea do composer: sem scrollbar até estourar o max-height */
+textarea {
+  scrollbar-width: none;
+}
+textarea::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes pulse-soft {

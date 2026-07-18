@@ -16,13 +16,38 @@ import type {
   WorkoutSetLog,
 } from "@/lib/types";
 import { buildOpening, coachReply } from "@/lib/tone";
-import { tryLlmReply } from "@/lib/llm-client";
+import {
+  buildIntakeQueue,
+  buildIntroMessage,
+  intakeClosing,
+} from "@/lib/first-contact";
+import { streamLlmReply } from "@/lib/llm-client";
+import type { ChatAction } from "@/app/api/chat/route";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
+import { computePendings } from "@/lib/pendings";
 import { createSupabaseBrowser } from "@/lib/supabase/browser";
+import { pullSnapshot, pushSnapshot, type SnapshotPayload } from "@/lib/supabase/sync";
+
+const FREE_DAILY_LIMIT = 15;
 
 function uid() {
   return crypto.randomUUID();
+}
+
+/** Ack curto no tom + próxima pergunta (intake) */
+function sayAckThenAsk(tone: UserProfile["tone"], userAnswer: string, nextAsk: string) {
+  const short =
+    userAnswer.length > 80 ? userAnswer.slice(0, 77) + "…" : userAnswer;
+  const ack =
+    tone === "sargento"
+      ? `REGISTRADO: “${short}”.`
+      : tone === "nutella"
+        ? `Anotei: “${short}” 💛`
+        : tone === "low_profile"
+          ? `Ok — “${short}”.`
+          : `Beleza, anotei: “${short}”.`;
+  return `${ack}\n\n${nextAsk}`;
 }
 
 function msg(
@@ -46,7 +71,8 @@ type Actions = {
   updatePlan: (plan: Plan) => void;
   redesignPlan: (instruction: string) => Plan | null;
   addMessage: (m: Omit<ChatMessage, "id" | "createdAt"> & { id?: string }) => void;
-  sendUserMessage: (text: string) => { navigateToWorkout?: string };
+  patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
+  sendUserMessage: (text: string) => Promise<{ navigateToWorkout?: string }>;
   sendImageMessage: (dataUrl: string, caption?: string) => void;
   startWorkout: () => string | null;
   completeSet: (set: WorkoutSetLog) => void;
@@ -62,6 +88,10 @@ type Actions = {
   resetAll: () => void;
   signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
+  applyCloudSnapshot: (payload: SnapshotPayload) => void;
+  syncToCloud: () => Promise<void>;
+  hydrateFromCloud: () => Promise<void>;
+  setAuthUserId: (id: string | null) => void;
 };
 
 const initial: AppState = {
@@ -75,6 +105,13 @@ const initial: AppState = {
   activeWorkoutId: null,
   lastOpenDate: null,
   typing: false,
+  streamingId: null,
+  dailyLlmCount: 0,
+  dailyLlmDate: null,
+  authUserId: null,
+  intakeQueue: [],
+  intakeIndex: 0,
+  awaitingFeedbackId: null,
 };
 
 function missedYesterday(
@@ -84,7 +121,6 @@ function missedYesterday(
 ) {
   if (!plan || !profile) return false;
   const yKey = dayKey(-1);
-  // não cobra falta anterior ao cadastro (usuário novo não "furou ontem")
   if (yKey < profile.createdAt.slice(0, 10)) return false;
   const day = plan.workoutDays.find((d) => d.weekday === weekdayOfKey(yKey));
   if (!day || day.isRest) return false;
@@ -93,47 +129,240 @@ function missedYesterday(
   );
 }
 
+function rollDailyCounter(s: AppState): Pick<AppState, "dailyLlmCount" | "dailyLlmDate"> {
+  const today = todayKey();
+  if (s.dailyLlmDate !== today) return { dailyLlmCount: 0, dailyLlmDate: today };
+  return { dailyLlmCount: s.dailyLlmCount, dailyLlmDate: s.dailyLlmDate };
+}
+
 export const useAppStore = create<AppState & Actions>()(
   persist(
     (set, get) => {
-      /** Resposta da IA com delay humano + indicador "digitando" */
       function reply(content: string, rich?: RichCard, delayMs?: number) {
-        const delay = delayMs ?? 550 + Math.random() * 500;
+        const delay = delayMs ?? 400 + Math.random() * 350;
         set({ typing: true });
         setTimeout(() => {
           set({ typing: false });
           get().addMessage({ role: "assistant", content, rich });
+          void get().syncToCloud();
         }, delay);
+      }
+
+      function applyActions(actions: ChatAction[]): { navigateToWorkout?: string; rich?: RichCard } {
+        let navigateToWorkout: string | undefined;
+        let rich: RichCard | undefined;
+        for (const a of actions) {
+          if (a.type === "open_workout") {
+            const id = get().startWorkout();
+            if (id) navigateToWorkout = id;
+          } else if (a.type === "log_weight") {
+            get().logWeight(a.kg);
+          } else if (a.type === "log_meal") {
+            get().logMeal(
+              a.slot,
+              a.description,
+              (a.adherence as MealLog["adherence"]) || "partial"
+            );
+          } else if (a.type === "redesign_plan") {
+            const next = get().redesignPlan(a.instruction);
+            if (next) {
+              rich = {
+                type: "plan_summary",
+                title: `Plano v${next.version}`,
+                body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
+              };
+            }
+          } else if (a.type === "finish_intake") {
+            const p = get().profile;
+            if (p && !p.intakeCompleted) {
+              set({
+                profile: { ...p, intakeCompleted: true },
+                intakeIndex: get().intakeQueue.length,
+              });
+              rich = {
+                type: "workout",
+                title: "Dossiê fechado",
+                body: "Agora é execução. Pode treinar ou ajustar o plano quando quiser.",
+                cta: "Iniciar treino",
+              };
+            }
+          } else if (a.type === "log_skip") {
+            // skip só narrativa por enquanto
+          }
+        }
+        return { navigateToWorkout, rich };
+      }
+
+      async function runLlmPipeline(
+        tone: UserProfile["tone"],
+        fallbackFn?: () => { content: string; rich?: RichCard }
+      ): Promise<{ navigateToWorkout?: string }> {
+        const rolled = rollDailyCounter(get());
+        set(rolled);
+
+        if (get().subscription === "free" && rolled.dailyLlmCount >= FREE_DAILY_LIMIT) {
+          reply(
+            coachReply(
+              tone,
+              "",
+              "generic",
+              `No Free são ${FREE_DAILY_LIMIT} mensagens de IA por dia. Amanhã reseta — ou sobe pro Básico em Eu.`
+            ),
+            { type: "paywall", title: "Shape Básico", body: "Chat ilimitado + nutri diária", cta: "Ver planos" }
+          );
+          return {};
+        }
+
+        const assistantId = uid();
+        set({ typing: true, streamingId: assistantId });
+        get().addMessage({
+          id: assistantId,
+          role: "assistant",
+          content: "",
+        });
+
+        let acc = "";
+        const state = get();
+        const result = await streamLlmReply(
+          {
+            ...state,
+            dailyLlmCount: rolled.dailyLlmCount,
+            dailyLlmDate: rolled.dailyLlmDate,
+          },
+          (chunk) => {
+            // ignora pedaços do marker
+            if (chunk.includes("[[SHAPE_ACTIONS]]")) {
+              const part = chunk.split("[[SHAPE_ACTIONS]]")[0];
+              if (part) {
+                acc += part;
+                get().patchMessage(assistantId, { content: acc.replace(/\n\[\[SHAPE_ACTIONS\]\][\s\S]*$/, "") });
+              }
+              return;
+            }
+            acc += chunk;
+            const clean = acc.split("\n[[SHAPE_ACTIONS]]")[0];
+            get().patchMessage(assistantId, { content: clean });
+          }
+        );
+
+        set({
+          typing: false,
+          streamingId: null,
+          dailyLlmCount: rolled.dailyLlmCount + (result.fallback && !result.text ? 0 : 1),
+          dailyLlmDate: rolled.dailyLlmDate ?? todayKey(),
+        });
+
+        let navigateToWorkout: string | undefined;
+        let rich: RichCard | undefined;
+
+        if (result.actions?.length) {
+          const applied = applyActions(result.actions);
+          navigateToWorkout = applied.navigateToWorkout;
+          rich = applied.rich;
+        }
+
+        if (result.text || acc) {
+          const finalText = (result.text || acc.split("\n[[SHAPE_ACTIONS]]")[0]).trim();
+          get().patchMessage(assistantId, { content: finalText, rich });
+        } else if (result.fallback) {
+          // fallback custom (ex.: roteiro de intake) ou rule-based genérico
+          if (fallbackFn) {
+            const fb = fallbackFn();
+            get().patchMessage(assistantId, { content: fb.content, rich: fb.rich });
+          } else {
+            const s = get();
+            const content = coachReply(tone, "", "generic");
+            const fallbackRich: RichCard | undefined =
+              rich ||
+              (s.plan && !planDayForDate(s.plan)?.isRest
+                ? {
+                    type: "workout",
+                    title: `Hoje: ${planDayForDate(s.plan)?.label}`,
+                    body: "Se for treino, é só mandar bora.",
+                    cta: "Iniciar treino",
+                  }
+                : {
+                    type: "meal_check",
+                    title: "Check-in de refeição",
+                    body: "Já comeu? Me conta o prato.",
+                    cta: "Já comi",
+                  });
+            get().patchMessage(assistantId, { content, rich: fallbackRich });
+          }
+        }
+
+        void get().syncToCloud();
+        return { navigateToWorkout };
       }
 
       return {
         ...initial,
 
         setSubscription: (p) => set({ subscription: p }),
+        setAuthUserId: (id) => set({ authUserId: id }),
+
+        applyCloudSnapshot: (payload) => {
+          const p = payload.profile;
+          const queue = p && !p.intakeCompleted ? buildIntakeQueue(p).map((q) => q.key) : [];
+          set({
+            profile: payload.profile ?? null,
+            plan: payload.plan ?? null,
+            messages: payload.messages ?? [],
+            sessions: payload.sessions ?? [],
+            mealLogs: payload.mealLogs ?? [],
+            metrics: payload.metrics ?? [],
+            subscription: payload.subscription ?? "basic",
+            activeWorkoutId: payload.activeWorkoutId ?? null,
+            lastOpenDate: payload.lastOpenDate ?? null,
+            dailyLlmCount: payload.dailyLlmCount ?? 0,
+            dailyLlmDate: payload.dailyLlmDate ?? null,
+            intakeQueue: queue,
+            intakeIndex: p?.intakeNotes?.length ?? 0,
+          });
+        },
+
+        syncToCloud: async () => {
+          const s = get();
+          if (!s.authUserId && !createSupabaseBrowser()) return;
+          await pushSnapshot({
+            profile: s.profile,
+            plan: s.plan,
+            messages: s.messages,
+            sessions: s.sessions,
+            mealLogs: s.mealLogs,
+            metrics: s.metrics,
+            subscription: s.subscription,
+            activeWorkoutId: s.activeWorkoutId,
+            lastOpenDate: s.lastOpenDate,
+            dailyLlmCount: s.dailyLlmCount,
+            dailyLlmDate: s.dailyLlmDate,
+          });
+        },
+
+        hydrateFromCloud: async () => {
+          const snap = await pullSnapshot();
+          if (snap?.profile) {
+            get().applyCloudSnapshot(snap);
+          }
+        },
 
         completeOnboarding: (profile, plan) => {
-          const opening = buildOpening({
-            name: profile.displayName,
-            tone: profile.tone,
-            hasWorkoutToday: !planDayForDate(plan)?.isRest,
-            workoutLabel: planDayForDate(plan)?.label,
-            workoutDoneToday: false,
-            missedYesterday: false,
-            pendingWeight: true,
-          });
+          const queue = buildIntakeQueue(profile);
+          // primeiro contato = UMA intro curta que já termina em pergunta.
+          // O cadastro inteiro vira memória (context pack), não fala.
           set({
-            profile,
+            profile: {
+              ...profile,
+              intakeCompleted: false,
+              intakeNotes: [],
+            },
             plan,
-            messages: [
-              msg("assistant", opening, {
-                type: "plan_summary",
-                title: "Plano ativo",
-                body: `${plan.workoutDays.filter((d) => !d.isRest).length} dias de treino · ${plan.nutrition.kcal} kcal`,
-                cta: "Ver no perfil",
-              }),
-            ],
+            messages: [msg("assistant", buildIntroMessage(profile))],
             lastOpenDate: todayKey(),
+            intakeQueue: queue.map((q) => q.key),
+            intakeIndex: 0,
           });
+          void get().syncToCloud();
         },
 
         updatePlan: (plan) => set({ plan }),
@@ -161,23 +390,69 @@ export const useAppStore = create<AppState & Actions>()(
             ],
           })),
 
+        patchMessage: (id, patch) =>
+          set((s) => ({
+            messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+          })),
+
         hydrateOpening: () => {
           const s = get();
           if (!s.profile || !s.plan) return;
           const today = todayKey();
           if (s.lastOpenDate === today && s.messages.length > 0) return;
 
+          // intake incompleto: não spamma "JANELA DE TREINO" — retoma dossiê
+          if (!s.profile.intakeCompleted) {
+            const queue = buildIntakeQueue(s.profile);
+            const idx = Math.min(
+              s.profile.intakeNotes?.length ?? s.intakeIndex ?? 0,
+              queue.length
+            );
+            const q = queue[idx];
+            const name = s.profile.displayName.split(" ")[0] || "campeão";
+            const resume = q
+              ? [
+                  msg(
+                    "assistant",
+                    coachReply(
+                      s.profile.tone,
+                      "",
+                      "generic",
+                      `Bora retomar teu dossiê, ${name}. Ainda falta eu te entender melhor.`
+                    )
+                  ),
+                  msg("assistant", q.ask(s.profile.tone, name)),
+                ]
+              : [
+                  msg(
+                    "assistant",
+                    intakeClosing(s.profile.tone, s.profile.displayName)
+                  ),
+                ];
+            set({
+              messages: [...s.messages, ...resume],
+              lastOpenDate: today,
+              intakeQueue: queue.map((x) => x.key),
+              intakeIndex: idx,
+              profile: q
+                ? s.profile
+                : { ...s.profile, intakeCompleted: true },
+            });
+            return;
+          }
+
           const day = planDayForDate(s.plan);
           const workoutDoneToday = s.sessions.some(
             (x) => x.date === today && x.status === "completed"
           );
-          const lastWeight = s.metrics
-            .filter((m) => m.kind === "weight")
-            .sort((a, b) => b.measuredAt.localeCompare(a.measuredAt))[0];
-          const pendingWeight =
-            !lastWeight ||
-            Date.now() - new Date(lastWeight.measuredAt).getTime() >
-              6 * 24 * 3600 * 1000;
+
+          // pendências do "personal vivo": feedback > peso 7d > medidas 14d > refeição
+          const pendings = computePendings(s);
+          const feedbackPending = pendings.find(
+            (p) => p.type === "post_workout_feedback"
+          );
+          const weightPending = pendings.some((p) => p.type === "weight_due");
+          const measuresPending = pendings.some((p) => p.type === "measures_due");
 
           const opening = buildOpening({
             name: s.profile.displayName,
@@ -186,11 +461,17 @@ export const useAppStore = create<AppState & Actions>()(
             workoutLabel: day?.label,
             workoutDoneToday,
             missedYesterday: missedYesterday(s.sessions, s.plan, s.profile),
-            pendingWeight,
+            pendingWeight: weightPending,
+            pendingFeedbackLabel:
+              feedbackPending?.type === "post_workout_feedback"
+                ? feedbackPending.session.label
+                : undefined,
+            pendingMeasures: !weightPending && measuresPending,
           });
 
           const cards: ChatMessage[] = [msg("assistant", opening)];
-          if (day && !day.isRest && !workoutDoneToday) {
+          // se abertura é puxada de feedback, não empilha card de treino junto
+          if (!feedbackPending && day && !day.isRest && !workoutDoneToday) {
             cards.push(
               msg("assistant", "Quando quiser, a gente começa:", {
                 type: "workout",
@@ -204,21 +485,161 @@ export const useAppStore = create<AppState & Actions>()(
           set({
             messages: [...s.messages, ...cards],
             lastOpenDate: today,
+            awaitingFeedbackId:
+              feedbackPending?.type === "post_workout_feedback"
+                ? feedbackPending.session.id
+                : s.awaitingFeedbackId,
           });
         },
 
-        sendUserMessage: (text) => {
+        sendUserMessage: async (text) => {
           const trimmed = text.trim();
           if (!trimmed) return {};
-          const s = get();
-          const tone = s.profile?.tone ?? "brother";
+          const s0 = get();
+          const tone = s0.profile?.tone ?? "brother";
           get().addMessage({ role: "user", content: trimmed });
 
           const lower = trimmed.toLowerCase();
-          let navigateToWorkout: string | undefined;
 
-          // 1) peso — só se a mensagem for APENAS um número (+kg opcional).
-          //    Evita logar "fiz 100kg no leg press" como peso corporal.
+          // ——— INTAKE (primeiro contato): diálogo real, 1 pergunta por vez ———
+          // A resposta do user vira nota do SOUL (dossiê vivo). O LLM conduz;
+          // sem LLM, cai no roteiro (uma pergunta por vez, nunca despejo).
+          const profile = get().profile;
+          if (profile && !profile.intakeCompleted) {
+            const queue = buildIntakeQueue(profile);
+            const idx = get().intakeIndex;
+
+            // escape: treinar agora / deixar pra depois
+            if (
+              /\bbora\b|vamos treinar|iniciar treino|pular entrevista|depois a gente fala/.test(
+                lower
+              )
+            ) {
+              set({
+                profile: { ...profile, intakeCompleted: true },
+                intakeIndex: queue.length,
+              });
+              if (/\bbora\b|vamos treinar|iniciar treino/.test(lower)) {
+                const id = get().startWorkout();
+                reply(
+                  intakeClosing(tone, profile.displayName) +
+                    "\n\n" +
+                    coachReply(tone, trimmed, "start_workout"),
+                  undefined,
+                  400
+                );
+                return { navigateToWorkout: id ?? undefined };
+              }
+              reply(intakeClosing(tone, profile.displayName), undefined, 400);
+              return {};
+            }
+
+            // resposta → nota do SOUL (pergunta = última fala da IA)
+            const lastAssistant = [...get().messages]
+              .reverse()
+              .find((m) => m.role === "assistant" && m.content.trim());
+            const notes = [
+              ...(profile.intakeNotes ?? []),
+              {
+                key: `soul_${(profile.intakeNotes?.length ?? 0) + 1}`,
+                question: (lastAssistant?.content ?? "").slice(0, 200),
+                answer: trimmed,
+                at: new Date().toISOString(),
+                metricLabel: "Dossiê (SOUL)",
+              },
+            ];
+            set({ profile: { ...profile, intakeNotes: notes } });
+
+            // LLM conduz a entrevista (reage + próxima pergunta + finish_intake).
+            // Fallback: roteiro escrito, uma pergunta por vez.
+            return runLlmPipeline(tone, () => {
+              const nextIdx = idx + 1;
+              const nextQ = queue[nextIdx];
+              if (nextQ) {
+                set({ intakeIndex: nextIdx });
+                return {
+                  content: sayAckThenAsk(
+                    tone,
+                    trimmed,
+                    nextQ.ask(tone, profile.displayName.split(" ")[0] || "campeão")
+                  ),
+                };
+              }
+              set({
+                profile: { ...get().profile!, intakeCompleted: true },
+                intakeIndex: queue.length,
+              });
+              return {
+                content: intakeClosing(tone, profile.displayName),
+                rich: {
+                  type: "workout",
+                  title: "Dossiê fechado",
+                  body: "Agora é execução. Pode treinar ou ajustar o plano no chat.",
+                  cta: "Iniciar treino",
+                },
+              };
+            });
+          }
+
+          // 0) feedback pós-treino: guarda a resposta e deixa o LLM conversar em cima
+          const awaitingId = get().awaitingFeedbackId;
+          if (
+            awaitingId &&
+            !/\bbora\b|iniciar treino|^\d/.test(lower)
+          ) {
+            set((st) => ({
+              awaitingFeedbackId: null,
+              sessions: st.sessions.map((sess) =>
+                sess.id === awaitingId
+                  ? { ...sess, feedback: trimmed, feedbackAt: new Date().toISOString() }
+                  : sess
+              ),
+            }));
+            // segue pro LLM — histórico tem a pergunta + resposta, ele conversa natural.
+            // Fallback sem LLM: ack no tom.
+          }
+
+          // 0.5) medidas — "cintura 84, braço 36" etc.
+          const measureRe =
+            /(cintura|peito|bra[cç]o|coxa)\s*:?\s*(\d{2,3}(?:[.,]\d)?)/g;
+          const found = [...lower.matchAll(measureRe)];
+          if (found.length >= 1 && !/kg/.test(lower)) {
+            const kindMap: Record<string, BodyMetric["kind"]> = {
+              cintura: "waist",
+              peito: "chest",
+              braco: "arm",
+              braço: "arm",
+              coxa: "thigh",
+            };
+            const saved: string[] = [];
+            for (const m of found) {
+              const kind = kindMap[m[1]];
+              const value = Number(m[2].replace(",", "."));
+              if (kind && value >= 15 && value <= 220) {
+                set((st) => ({
+                  metrics: [
+                    ...st.metrics,
+                    { id: uid(), kind, value, measuredAt: new Date().toISOString() },
+                  ],
+                }));
+                saved.push(`${m[1]} ${value}cm`);
+              }
+            }
+            if (saved.length) {
+              reply(
+                coachReply(
+                  tone,
+                  trimmed,
+                  "generic",
+                  `Medidas salvas: ${saved.join(", ")}. Daqui 2 semanas a gente compara — é aí que o shape aparece.`
+                )
+              );
+              void get().syncToCloud();
+              return {};
+            }
+          }
+
+          // 1) peso puro — caminho rápido
           const weightOnly = lower.match(/^\s*(\d{2,3}(?:[.,]\d)?)\s*(?:kg)?\s*$/);
           if (weightOnly) {
             const kg = Number(weightOnly[1].replace(",", "."));
@@ -229,41 +650,19 @@ export const useAppStore = create<AppState & Actions>()(
             }
           }
 
-          // 2) redesign — ANTES do intent de treino ("ajusta o treino" é redesign, não start)
+          // 2) bora explícito — abre treino na hora
           if (
-            /sem ricota|sou pobre|barato|orçamento|orcamento|sem agach|odeio|troca (o|a)|enjoei|não posso|nao posso|muda (o plano|o treino|a dieta)|ajusta|redesenha/.test(
+            /\bbora\b|vamos treinar|iniciar treino|come[cç]ar treino|partiu treino|^iniciar$|^treinar$/.test(
               lower
             )
           ) {
-            const next = get().redesignPlan(trimmed);
-            reply(
-              coachReply(
-                tone,
-                trimmed,
-                "generic",
-                next
-                  ? `Redesenhei o plano (v${next.version}). Olha se fechou — se não, a gente itera de novo.`
-                  : "Não consegui ajustar agora."
-              ),
-              next
-                ? {
-                    type: "plan_summary",
-                    title: `Plano v${next.version}`,
-                    body: `${next.nutrition.kcal} kcal · proteína ${next.nutrition.proteinG}g`,
-                  }
-                : undefined
-            );
-            return {};
+            const id = get().startWorkout();
+            reply(coachReply(tone, trimmed, "start_workout"), undefined, 280);
+            return { navigateToWorkout: id ?? undefined };
           }
 
-          // 3) skip
-          if (/pulei|não vou treinar|nao vou treinar|hoje não|hoje nao|\bskip\b|desisto/.test(lower)) {
-            reply(coachReply(tone, trimmed, "skip", "Amanhã a gente retoma sem drama."));
-            return {};
-          }
-
-          // 4) foto / vision paywall (menção por texto)
-          if (/foto|imagem/.test(lower) && s.subscription !== "pro") {
+          // 3) paywall vision menção
+          if (/foto|imagem|vision/.test(lower) && get().subscription !== "pro") {
             reply(coachReply(tone, trimmed, "paywall_vision"), {
               type: "paywall",
               title: "Shape Pro",
@@ -273,108 +672,8 @@ export const useAppStore = create<AppState & Actions>()(
             return {};
           }
 
-          // 5) refeição
-          if (/almocei|jantei|comi|café|cafe da|já comi|ja comi/.test(lower)) {
-            const slot = /jant/.test(lower) ? "janta" : /caf[eé]/.test(lower) ? "cafe" : "almoco";
-            get().logMeal(slot, trimmed, "partial");
-            reply(
-              coachReply(
-                tone,
-                trimmed,
-                "ack_meal",
-                "Se quiser ser mais preciso, manda o prato em uma linha."
-              )
-            );
-            return {};
-          }
-
-          // 6) iniciar treino — só comando explícito ("que treino é hoje?" não inicia)
-          if (
-            /\bbora\b|vamos treinar|iniciar treino|come[cç]ar treino|partiu treino|^iniciar$|^treinar$/.test(
-              lower
-            )
-          ) {
-            const id = get().startWorkout();
-            reply(coachReply(tone, trimmed, "start_workout"), undefined, 350);
-            if (id) navigateToWorkout = id;
-            return { navigateToWorkout };
-          }
-
-          // 7) saudação curta — resposta no tom, não menu frio
-          if (
-            /^(oi+|ol[aá]|opa|salve|eae|ea[ií]|e a[ií]|bom dia|boa tarde|boa noite|fala)\b/.test(lower) &&
-            lower.length < 24
-          ) {
-            const day = s.plan ? planDayForDate(s.plan) : null;
-            const dayNote = day
-              ? day.isRest
-                ? "Hoje é descanso."
-                : `Hoje tem ${day.label}.`
-              : "";
-            // com LLM configurado, deixa ele responder; senão greeting no tom
-            set({ typing: true });
-            void (async () => {
-              const llm = await tryLlmReply(trimmed, s);
-              set({ typing: false });
-              get().addMessage({
-                role: "assistant",
-                content: llm ?? coachReply(tone, trimmed, "greeting", dayNote),
-              });
-            })();
-            return {};
-          }
-
-          // 8) como estou
-          if (/como estou|evolução|evolucao|progresso|resumo/.test(lower)) {
-            const sessions = s.sessions.filter((x) => x.status === "completed").length;
-            const lastW = s.metrics[s.metrics.length - 1];
-            reply(
-              coachReply(
-                tone,
-                trimmed,
-                "generic",
-                `Resumo: ${sessions} treino(s) logado(s). ${
-                  lastW ? `Último peso ${lastW.value} kg.` : "Ainda sem peso registrado."
-                } Abre a aba Evolução pro gráfico.`
-              ),
-              {
-                type: "insight",
-                title: "Seu pulso",
-                body: `${sessions} treinos · ${s.mealLogs.length} refeições logadas`,
-              }
-            );
-            return {};
-          }
-
-          // fallback: tenta LLM real; sem key/erro → rule-based com card contextual
-          set({ typing: true });
-          void (async () => {
-            const llm = await tryLlmReply(trimmed, s);
-            set({ typing: false });
-            if (llm) {
-              get().addMessage({ role: "assistant", content: llm });
-              return;
-            }
-            get().addMessage({
-              role: "assistant",
-              content: coachReply(tone, trimmed, "generic"),
-              rich:
-                s.plan && !planDayForDate(s.plan)?.isRest
-                  ? {
-                      type: "workout",
-                      title: `Hoje: ${planDayForDate(s.plan)?.label}`,
-                      body: "Se for treino, é só mandar bora.",
-                      cta: "Iniciar treino",
-                    }
-                  : {
-                      type: "meal_check",
-                      title: "Check-in de refeição",
-                      body: "Já comeu? Me conta o prato.",
-                      cta: "Já comi",
-                    },
-            });
-          })();
-          return { navigateToWorkout };
+          // 4) resto → LLM-first com stream + tools (fallback rule-based)
+          return runLlmPipeline(tone);
         },
 
         sendImageMessage: (dataUrl, caption) => {
@@ -408,9 +707,9 @@ export const useAppStore = create<AppState & Actions>()(
             set({ typing: false });
             if (vision) {
               get().addMessage({ role: "assistant", content: vision });
+              void get().syncToCloud();
               return;
             }
-            // sem key LLM: resposta demo no tom (ainda registra a foto)
             get().addMessage({
               role: "assistant",
               content: coachReply(
@@ -418,10 +717,11 @@ export const useAppStore = create<AppState & Actions>()(
                 caption ?? "",
                 "ack_meal",
                 caption?.trim()
-                  ? `Foto + legenda anotadas. (${caption.trim()}) Pra análise visual de verdade, configura OPENAI_API_KEY no servidor.`
-                  : "Foto salva. Me manda em texto o que tem no prato (arroz, frango…) que eu julgo — ou configura Vision no servidor."
+                  ? `Foto + legenda anotadas. (${caption.trim()}) Configure OPENAI_API_KEY pro Vision completo.`
+                  : "Foto salva. Descreve o prato em 1 linha — ou configura Vision no servidor."
               ),
             });
+            void get().syncToCloud();
           })();
         },
 
@@ -441,8 +741,8 @@ export const useAppStore = create<AppState & Actions>()(
             skippedExercises: [],
             planDayWeekday: day.weekday,
           };
-          set((s) => ({
-            sessions: [...s.sessions, session],
+          set((st) => ({
+            sessions: [...st.sessions, session],
             activeWorkoutId: session.id,
           }));
           return session.id;
@@ -451,8 +751,8 @@ export const useAppStore = create<AppState & Actions>()(
         completeSet: (setLog) => {
           const { activeWorkoutId } = get();
           if (!activeWorkoutId) return;
-          set((s) => ({
-            sessions: s.sessions.map((sess) =>
+          set((st) => ({
+            sessions: st.sessions.map((sess) =>
               sess.id === activeWorkoutId
                 ? { ...sess, sets: [...sess.sets, setLog] }
                 : sess
@@ -463,8 +763,8 @@ export const useAppStore = create<AppState & Actions>()(
         skipExercise: (exerciseId) => {
           const { activeWorkoutId } = get();
           if (!activeWorkoutId) return;
-          set((s) => ({
-            sessions: s.sessions.map((sess) =>
+          set((st) => ({
+            sessions: st.sessions.map((sess) =>
               sess.id === activeWorkoutId
                 ? {
                     ...sess,
@@ -479,9 +779,9 @@ export const useAppStore = create<AppState & Actions>()(
           const { activeWorkoutId, profile, sessions } = get();
           if (!activeWorkoutId) return;
           const session = sessions.find((x) => x.id === activeWorkoutId);
-          set((s) => ({
+          set((st) => ({
             activeWorkoutId: null,
-            sessions: s.sessions.map((sess) =>
+            sessions: st.sessions.map((sess) =>
               sess.id === activeWorkoutId
                 ? {
                     ...sess,
@@ -497,6 +797,7 @@ export const useAppStore = create<AppState & Actions>()(
               role: "assistant",
               content: coachReply(tone, "", "skip", "Treino ficou pra depois. Me chama quando voltar."),
             });
+            void get().syncToCloud();
             return;
           }
           const skipped = session?.skippedExercises.length ?? 0;
@@ -509,6 +810,34 @@ export const useAppStore = create<AppState & Actions>()(
             role: "assistant",
             content: coachReply(tone, "", "workout_done", extra),
           });
+
+          // personal vivo: marca feedback pendente e, se app aberto, puxa assunto em ~25min
+          if (doneSets > 0 && session) {
+            const sid = session.id;
+            set({ awaitingFeedbackId: sid });
+            setTimeout(
+              () => {
+                const st = get();
+                if (st.awaitingFeedbackId !== sid || !st.profile) return;
+                const name = st.profile.displayName.split(" ")[0] || "campeão";
+                const t = st.profile.tone;
+                get().addMessage({
+                  role: "assistant",
+                  content:
+                    t === "sargento"
+                      ? `${name.toUpperCase()}. RELATÓRIO PÓS-TREINO: COMO O CORPO RESPONDEU? DOR? ENERGIA?`
+                      : t === "nutella"
+                        ? `${name}, e aí — como você tá se sentindo depois do treino? 💛 Dolorido bom ou cansaço demais?`
+                        : t === "low_profile"
+                          ? `${name}. Pós-treino: como foi? Alguma dor?`
+                          : `E aí ${name}, já baixou a poeira — deu bom o treino? Como o corpo respondeu?`,
+                });
+                void get().syncToCloud();
+              },
+              25 * 60 * 1000
+            );
+          }
+          void get().syncToCloud();
         },
 
         logMeal: (slot, description, adherence, source = "text") => {
@@ -520,7 +849,7 @@ export const useAppStore = create<AppState & Actions>()(
             loggedAt: new Date().toISOString(),
             source,
           };
-          set((s) => ({ mealLogs: [...s.mealLogs, log] }));
+          set((st) => ({ mealLogs: [...st.mealLogs, log] }));
         },
 
         logWeight: (kg) => {
@@ -530,22 +859,35 @@ export const useAppStore = create<AppState & Actions>()(
             value: kg,
             measuredAt: new Date().toISOString(),
           };
-          set((s) => ({ metrics: [...s.metrics, m] }));
+          set((st) => ({ metrics: [...st.metrics, m] }));
         },
 
         updateTone: (tone) => {
-          set((s) => (s.profile ? { profile: { ...s.profile, tone } } : {}));
+          set((st) => (st.profile ? { profile: { ...st.profile, tone } } : {}));
+          void get().syncToCloud();
         },
 
         resetAll: () =>
-          set({ ...initial, messages: [], sessions: [], mealLogs: [], metrics: [] }),
+          set({
+            ...initial,
+            messages: [],
+            sessions: [],
+            mealLogs: [],
+            metrics: [],
+          }),
 
         signOut: async () => {
           const supabase = createSupabaseBrowser();
           if (supabase) {
             await supabase.auth.signOut().catch(() => {});
           }
-          set({ ...initial, messages: [], sessions: [], mealLogs: [], metrics: [] });
+          set({
+            ...initial,
+            messages: [],
+            sessions: [],
+            mealLogs: [],
+            metrics: [],
+          });
         },
       };
     },
@@ -554,7 +896,6 @@ export const useAppStore = create<AppState & Actions>()(
       partialize: (s) => ({
         profile: s.profile,
         plan: s.plan,
-        // cap: não deixa o localStorage crescer sem limite; imagem só nas 10 últimas
         messages: s.messages.slice(-200).map((m, i, arr) =>
           m.imageDataUrl && i < arr.length - 10 ? { ...m, imageDataUrl: undefined } : m
         ),
@@ -564,6 +905,12 @@ export const useAppStore = create<AppState & Actions>()(
         subscription: s.subscription,
         activeWorkoutId: s.activeWorkoutId,
         lastOpenDate: s.lastOpenDate,
+        dailyLlmCount: s.dailyLlmCount,
+        dailyLlmDate: s.dailyLlmDate,
+        authUserId: s.authUserId,
+        intakeQueue: s.intakeQueue,
+        intakeIndex: s.intakeIndex,
+        awaitingFeedbackId: s.awaitingFeedbackId,
       }),
     }
   )

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Button, Input, Label } from "@/components/ui";
 import {
   createSupabaseBrowser,
   isSupabaseConfigured,
@@ -12,14 +12,31 @@ import { useAppStore } from "@/store/app-store";
 
 export default function LoginPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const profile = useAppStore((s) => s.profile);
+  const authUserId = useAppStore((s) => s.authUserId);
   const [loading, setLoading] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSupabase = isSupabaseConfigured();
 
   useEffect(() => {
-    if (profile?.onboardingCompleted) router.replace("/chat");
-  }, [profile, router]);
+    if (params.get("error") === "auth") {
+      setError("Não rolou autenticar. Tenta de novo.");
+    }
+  }, [params]);
+
+  useEffect(() => {
+    if (profile?.onboardingCompleted) {
+      router.replace("/chat");
+      return;
+    }
+    if (authUserId && !profile?.onboardingCompleted) {
+      router.replace("/onboarding");
+    }
+  }, [profile, authUserId, router]);
 
   async function signInGoogle() {
     setError(null);
@@ -41,17 +58,47 @@ export default function LoginPage() {
     }
   }
 
+  async function signInMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const supabase = createSupabaseBrowser();
+    if (!supabase) {
+      setError("Supabase ainda não configurado.");
+      return;
+    }
+    if (!email.trim() || !email.includes("@")) {
+      setError("Manda um email válido.");
+      return;
+    }
+    setEmailLoading(true);
+    const { error: err } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    setEmailLoading(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setEmailSent(true);
+  }
+
   return (
     <div className="app-shell px-6 py-10 justify-between">
       <div className="pt-8">
         <Link href="/" className="text-sm text-muted hover:text-ink">
           ← Voltar
         </Link>
-        <h1 className="text-3xl font-bold mt-6 tracking-tight">Entrar</h1>
+        <div className="mt-8 mb-2 text-brand font-bold text-2xl tracking-tight">
+          SHAPE
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">Entrar</h1>
         <p className="text-muted text-sm mt-2 leading-relaxed">
           {hasSupabase
-            ? "Continua com Google pra sincronizar teu progresso na nuvem."
-            : "Modo demo local ativo. Google Auth liga quando você configurar Supabase."}
+            ? "Google ou magic link — progresso sincroniza na nuvem."
+            : "Modo demo local. Configure Supabase pra auth real."}
         </p>
 
         <div className="mt-8 space-y-3">
@@ -64,13 +111,47 @@ export default function LoginPage() {
           >
             {loading ? "Abrindo Google…" : "Continuar com Google"}
           </Button>
+
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted">ou</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          {emailSent ? (
+            <div className="rounded-2xl border border-brand/30 bg-brand/10 p-4 text-sm">
+              Link enviado pra <strong>{email}</strong>. Abre o email e toca no
+              link pra entrar.
+            </div>
+          ) : (
+            <form onSubmit={signInMagicLink} className="space-y-2">
+              <Label>Email (magic link)</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@email.com"
+                disabled={!hasSupabase || emailLoading}
+                autoComplete="email"
+              />
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                variant="secondary"
+                disabled={!hasSupabase || emailLoading}
+              >
+                {emailLoading ? "Enviando…" : "Entrar com email"}
+              </Button>
+            </form>
+          )}
+
           {!hasSupabase && (
             <p className="text-xs text-warning leading-relaxed">
               Defina <code className="text-ink">NEXT_PUBLIC_SUPABASE_URL</code> e{" "}
               <code className="text-ink">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> em{" "}
-              <code className="text-ink">.env.local</code>, rode a migration em{" "}
-              <code className="text-ink">supabase/migrations</code> e ative
-              Google no painel Auth.
+              <code className="text-ink">.env.local</code>, rode as migrations e
+              ative Google + Email no painel Auth.
             </p>
           )}
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -84,7 +165,8 @@ export default function LoginPage() {
           </Button>
         </Link>
         <p className="text-center text-xs text-muted">
-          Demo salva só neste aparelho (localStorage).
+          Ao continuar, você entende que não é serviço médico. Demo local fica
+          só neste aparelho.
         </p>
       </div>
     </div>

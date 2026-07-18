@@ -39,6 +39,19 @@ export interface UserProfile {
   tone: Tone;
   onboardingCompleted: boolean;
   createdAt: string;
+  /**
+   * Primeiro contato conversacional (dossiê).
+   * Enquanto false, o chat aprofunda perfil em vez de só "bora treinar".
+   */
+  intakeCompleted?: boolean;
+  /** Respostas do intake — métrica pro personal / IA */
+  intakeNotes?: {
+    key: string;
+    question: string;
+    answer: string;
+    at: string;
+    metricLabel?: string;
+  }[];
 }
 
 export interface Exercise {
@@ -142,6 +155,9 @@ export interface WorkoutSession {
   sets: WorkoutSetLog[];
   skippedExercises: string[];
   planDayWeekday: number;
+  /** resposta do "e aí, deu bom?" pós-treino */
+  feedback?: string;
+  feedbackAt?: string;
 }
 
 export interface MealLog {
@@ -153,9 +169,11 @@ export interface MealLog {
   source: "text" | "chip" | "photo";
 }
 
+export type BodyMetricKind = "weight" | "waist" | "chest" | "arm" | "thigh";
+
 export interface BodyMetric {
   id: string;
-  kind: "weight";
+  kind: BodyMetricKind;
   value: number;
   measuredAt: string;
 }
@@ -170,6 +188,18 @@ export interface AppState {
   subscription: SubscriptionPlan;
   activeWorkoutId: string | null;
   lastOpenDate: string | null;
-  /** IA "digitando" — não persiste */
+  /** IA "digitando" / streaming — não persiste */
   typing: boolean;
+  /** msg id da bolha em streaming */
+  streamingId: string | null;
+  /** contagem Free de chamadas LLM no dia */
+  dailyLlmCount: number;
+  dailyLlmDate: string | null;
+  /** user id Supabase se logado */
+  authUserId: string | null;
+  /** fila de keys do intake + índice atual */
+  intakeQueue: string[];
+  intakeIndex: number;
+  /** sessão aguardando feedback pós-treino ("e aí, deu bom?") */
+  awaitingFeedbackId: string | null;
 }

@@ -1,18 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { AuthBootstrap } from "@/components/auth-bootstrap";
 
-/** Avoids hydration mismatch with zustand persist */
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
-  if (!ready) {
-    return (
-      <div className="app-shell items-center justify-center">
-        <div className="text-brand font-bold text-2xl tracking-tight">Shape.ai</div>
-        <p className="text-muted text-sm mt-2">Carregando teu personal…</p>
-      </div>
-    );
-  }
-  return <>{children}</>;
+  // mata service worker fantasma de versões antigas (segurava bundle/CSS velho
+  // em cache infinito). Remover quando o PWA real (Serwist) entrar.
+  useEffect(() => {
+    navigator.serviceWorker
+      ?.getRegistrations()
+      .then((rs) => rs.forEach((r) => r.unregister()))
+      .catch(() => {});
+    if ("caches" in window) {
+      caches
+        .keys()
+        .then((ks) => ks.forEach((k) => void caches.delete(k)))
+        .catch(() => {});
+    }
+  }, []);
+
+  return <AuthBootstrap>{children}</AuthBootstrap>;
 }

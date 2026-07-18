@@ -7,6 +7,7 @@ import { TabBar } from "@/components/tab-bar";
 import { Button, Chip, Sheet, TypingDots } from "@/components/ui";
 import { TONE_META } from "@/lib/tone";
 import { planDayForDate } from "@/lib/plan-generator";
+import { intakeChips } from "@/lib/first-contact";
 import { cn, dayKey, nowParts, vibrate } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import type { ChatMessage } from "@/lib/types";
@@ -95,6 +96,7 @@ export default function ChatPage() {
   const plan = useAppStore((s) => s.plan);
   const messages = useAppStore((s) => s.messages);
   const typing = useAppStore((s) => s.typing);
+  const streamingId = useAppStore((s) => s.streamingId);
   const subscription = useAppStore((s) => s.subscription);
   const hydrateOpening = useAppStore((s) => s.hydrateOpening);
   const sendUserMessage = useAppStore((s) => s.sendUserMessage);
@@ -103,6 +105,8 @@ export default function ChatPage() {
   const addMessage = useAppStore((s) => s.addMessage);
   const logWeight = useAppStore((s) => s.logWeight);
   const signOut = useAppStore((s) => s.signOut);
+  const intakeQueue = useAppStore((s) => s.intakeQueue);
+  const intakeIndex = useAppStore((s) => s.intakeIndex);
 
   const [text, setText] = useState("");
   const [weightSheet, setWeightSheet] = useState(false);
@@ -129,7 +133,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom(true);
-  }, [messages.length, typing]);
+  }, [messages.length, typing, messages[messages.length - 1]?.content]);
 
   // autogrow textarea (max 4 linhas)
   useEffect(() => {
@@ -139,12 +143,12 @@ export default function ChatPage() {
     el.style.height = `${Math.min(el.scrollHeight, 4 * 22 + 20)}px`;
   }, [text]);
 
-  function handleSend(raw?: string) {
+  async function handleSend(raw?: string) {
     const value = (raw ?? text).trim();
     if (!value) return;
     setText("");
     vibrate(8);
-    const result = sendUserMessage(value);
+    const result = await sendUserMessage(value);
     if (result.navigateToWorkout) {
       router.push(`/workout/${result.navigateToWorkout}`);
     }
@@ -235,12 +239,16 @@ export default function ChatPage() {
 
   const { time } = nowParts();
   const day = plan ? planDayForDate(plan) : null;
-  const chips = [
-    day && !day.isRest ? "Bora treinar" : null,
-    "Já almocei",
-    "Registrar peso",
-    "Como estou?",
-  ].filter(Boolean) as string[];
+  const intakeOpen = profile.intakeCompleted === false;
+  const currentIntakeKey = intakeOpen ? intakeQueue[intakeIndex] ?? null : null;
+  const chips = intakeOpen
+    ? [...intakeChips(currentIntakeKey), "Depois a gente fala"]
+    : ([
+        day && !day.isRest ? "Bora treinar" : null,
+        "Já almocei",
+        "Registrar peso",
+        "Como estou?",
+      ].filter(Boolean) as string[]);
 
   return (
     <div className="app-shell">
@@ -253,6 +261,13 @@ export default function ChatPage() {
           <div className="text-xs text-muted truncate">
             {typing ? (
               <span className="text-brand">digitando…</span>
+            ) : intakeOpen ? (
+              <>
+                {TONE_META[profile.tone].label} · montando teu dossiê
+                {intakeQueue.length
+                  ? ` · ${Math.min(intakeIndex + 1, intakeQueue.length)}/${intakeQueue.length}`
+                  : ""}
+              </>
             ) : (
               <>
                 {TONE_META[profile.tone].label} · {time}
@@ -274,8 +289,10 @@ export default function ChatPage() {
         {grouped.map(({ m, newDay, firstOfGroup, lastOfGroup }) => {
           const isUser = m.role === "user";
           const isSystem = m.role === "system";
+          const isStreaming = m.id === streamingId;
           const isNew =
             m.role === "assistant" &&
+            !isStreaming &&
             new Date(m.createdAt).getTime() > mountedAt.current - 300;
 
           return (
@@ -341,11 +358,15 @@ export default function ChatPage() {
                         />
                       )}
                       {m.role === "assistant" ? (
-                        <Typewriter
-                          text={m.content}
-                          animate={isNew}
-                          onTick={() => scrollToBottom()}
-                        />
+                        isStreaming ? (
+                          <span className="typewriter-caret">{m.content || "…"}</span>
+                        ) : (
+                          <Typewriter
+                            text={m.content}
+                            animate={isNew}
+                            onTick={() => scrollToBottom()}
+                          />
+                        )
                       ) : (
                         m.content
                       )}
@@ -450,7 +471,9 @@ export default function ChatPage() {
             type="file"
             accept="image/jpeg,image/png,image/webp"
             onChange={handlePickImage}
+            hidden
             className="hidden"
+            style={{ display: "none" }}
             aria-hidden="true"
             tabIndex={-1}
           />

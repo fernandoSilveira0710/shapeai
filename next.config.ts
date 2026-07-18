@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "cdn.jsdelivr.net",
-        pathname: "/gh/yuhonas/free-exercise-db@main/**",
+        pathname: "/gh/**",
       },
     ],
   },

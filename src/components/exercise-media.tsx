@@ -16,33 +16,13 @@ export function ExerciseMedia({
   className?: string;
 }) {
   const media = getExerciseMedia(exerciseId);
-  const [frame, setFrame] = useState(0);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setFrame(0);
     setFailed(false);
   }, [exerciseId]);
 
-  // alterna 0/1.jpg ~1.1s = sensação de GIF leve
-  useEffect(() => {
-    if (!media?.secondary || failed) return;
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
-    const t = setInterval(() => setFrame((f) => (f === 0 ? 1 : 0)), 1100);
-    return () => clearInterval(t);
-  }, [media, failed, exerciseId]);
-
-  const src =
-    media && !failed
-      ? frame === 1 && media.secondary
-        ? media.secondary
-        : media.primary
-      : null;
+  const src = media && !failed ? media.gifUrl : null;
 
   return (
     <div
@@ -54,7 +34,7 @@ export function ExerciseMedia({
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          key={`${exerciseId}-${frame}`}
+          key={exerciseId}
           src={src}
           alt=""
           className="absolute inset-0 size-full object-cover object-center animate-fade-in"

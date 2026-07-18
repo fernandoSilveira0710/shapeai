@@ -19,8 +19,12 @@ export default function MePage() {
   const updateTone = useAppStore((s) => s.updateTone);
   const resetAll = useAppStore((s) => s.resetAll);
   const signOut = useAppStore((s) => s.signOut);
+  const authUserId = useAppStore((s) => s.authUserId);
+  const dailyLlmCount = useAppStore((s) => s.dailyLlmCount);
+  const syncToCloud = useAppStore((s) => s.syncToCloud);
   const [pushStatus, setPushStatus] = useState<string>("");
   const [installHint, setInstallHint] = useState("");
+  const [syncMsg, setSyncMsg] = useState("");
 
   useEffect(() => {
     if (!profile?.onboardingCompleted) router.replace("/");
@@ -52,7 +56,17 @@ export default function MePage() {
 
   function logout() {
     if (!confirm("Sair da conta? Os dados locais serão apagados deste aparelho.")) return;
-    signOut().then(() => router.replace("/"));
+    signOut().then(() => router.replace(authUserId ? "/login" : "/"));
+  }
+
+  async function handleSync() {
+    setSyncMsg("Sincronizando…");
+    await syncToCloud();
+    setSyncMsg(
+      authUserId
+        ? "Snapshot enviado (precisa da migration app_snapshots)."
+        : "Faça login Supabase pra sync na nuvem."
+    );
   }
 
   async function enablePush() {
@@ -85,9 +99,15 @@ export default function MePage() {
         <Card>
           <h2 className="font-semibold mb-2">Assinatura (demo)</h2>
           <p className="text-sm text-muted mb-3">
-            Simula gate. <strong className="text-ink">Pro</strong> libera câmera do
-            prato (Vision se tiver API key).
+            <strong className="text-ink">Free</strong>: 15 msgs IA/dia ·{" "}
+            <strong className="text-ink">Básico</strong>: chat solto ·{" "}
+            <strong className="text-ink">Pro</strong>: Vision foto.
           </p>
+          {subscription === "free" && (
+            <p className="text-xs text-muted mb-2">
+              Hoje: {dailyLlmCount}/15 mensagens IA
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {(["free", "basic", "pro"] as SubscriptionPlan[]).map((p) => (
               <Chip
@@ -102,6 +122,30 @@ export default function MePage() {
         </Card>
 
         <Card>
+          <h2 className="font-semibold mb-2">Conta & nuvem</h2>
+          <p className="text-sm text-muted mb-3">
+            {authUserId
+              ? `Logado · id ${authUserId.slice(0, 8)}…`
+              : "Demo local (sem Supabase session)"}
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button variant="secondary" className="w-full" onClick={handleSync}>
+              Sync agora
+            </Button>
+            {!authUserId && (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => router.push("/login")}
+              >
+                Entrar com Google / email
+              </Button>
+            )}
+            {syncMsg && <p className="text-xs text-muted">{syncMsg}</p>}
+          </div>
+        </Card>
+
+        <Card>
           <h2 className="font-semibold mb-2">Tom</h2>
           <div className="flex flex-wrap gap-2">
             {(Object.keys(TONE_META) as Tone[]).map((t) => (
@@ -110,6 +154,31 @@ export default function MePage() {
               </Chip>
             ))}
           </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-2">Dossiê (pro personal)</h2>
+          {profile.intakeCompleted === false ? (
+            <p className="text-sm text-muted">
+              Ainda em conversa no chat — a IA está aprofundando teu perfil.
+            </p>
+          ) : !profile.intakeNotes?.length ? (
+            <p className="text-sm text-muted">
+              Sem notas de intake (conta antiga). Refaz o onboarding pra gerar dossiê.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {profile.intakeNotes.map((n) => (
+                <li key={n.key + n.at} className="text-sm border-b border-border/50 pb-2">
+                  <div className="text-[11px] text-brand font-medium">
+                    {n.metricLabel || n.key}
+                  </div>
+                  <div className="text-muted text-xs mt-0.5 line-clamp-2">{n.question}</div>
+                  <div className="mt-1 text-ink">{n.answer}</div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
 
         <Card>

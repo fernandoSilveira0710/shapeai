@@ -17,7 +17,7 @@ Abre [http://localhost:3000](http://localhost:3000).
 1. **Onboarding** conversacional (objetivo, rotina, tom, plano)
 2. **Redesign** do plano (“sou pobre…”, “sem agachamento…”)
 3. **Chat** com abertura contextual + 4 tons + typing + typewriter
-4. **Modo treino** com **mídia de exercício** (free-exercise-db), séries, descanso, wake lock
+4. **Modo treino** com **GIFs de exercício** (exercises-dataset via jsDelivr), séries, descanso, wake lock
 5. **Foto do prato** (Pro) → `/api/vision/meal` se tiver key
 6. **Refeições** e **peso**
 7. **Evolução** (streak, gráficos, insights)
@@ -29,10 +29,20 @@ Abre [http://localhost:3000](http://localhost:3000).
 
 ```bash
 cp .env.example .env.local
-# preencha OPENAI_API_KEY (ou DeepSeek via OPENAI_BASE_URL)
+# preencha OPENAI_API_KEY (ou DeepSeek via OPENAI_BASE_URL / LLM_PROVIDER)
 ```
 
-Sem key: coach **rule-based** (já usável). Vision cai em fallback.
+Com key: **chat streaming** + tools (abrir treino, log meal/peso, redesign).  
+Sem key: coach **rule-based**. Vision cai em fallback.
+
+### Auth + sync (opcional)
+
+1. Rode `supabase/migrations/001_init.sql` e `002_app_snapshots.sql`  
+2. Auth → Google + Email OTP  
+3. Redirect: `http://localhost:3000/auth/callback`  
+4. `.env.local` com `NEXT_PUBLIC_SUPABASE_*`  
+
+Snapshot do app (perfil/plano/chat/treinos) sobe em `app_snapshots` ao onboarding e após mensagens.
 
 ### Supabase
 
@@ -47,7 +57,7 @@ Sem key: coach **rule-based** (já usável). Vision cai em fallback.
 - Next.js 16 + React 19 + Tailwind 4  
 - Zustand (estado local MVP)  
 - Vercel AI SDK (chat + vision opcional)  
-- free-exercise-db (mídia)  
+- exercises-dataset via jsDelivr CDN (GIFs 180×180, media © Gym visual)
 - Supabase (schema + OAuth callback)
 
 ## Specs do produto

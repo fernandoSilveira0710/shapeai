@@ -34,7 +34,9 @@ export async function GET(request: Request) {
       });
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
-        return NextResponse.redirect(`${origin}${next}`);
+        // app client decide chat vs onboarding via snapshot/localStorage
+        const dest = next === "/onboarding" ? "/onboarding" : "/";
+        return NextResponse.redirect(`${origin}${dest}`);
       }
     }
   }

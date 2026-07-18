@@ -69,7 +69,7 @@ const SPLITS: Record<string, { label: string; muscles: string[] }[]> = {
     { label: "Costas", muscles: ["costas", "biceps", "core"] },
     { label: "Perna", muscles: ["pernas", "posterior", "panturrilha"] },
     { label: "Ombros", muscles: ["ombros", "triceps", "core"] },
-    { label: "Full / fraco", muscles: ["costas", "peito", "biceps", "core"] },
+    { label: "Upper (reforço)", muscles: ["costas", "peito", "biceps", "core"] },
   ],
   6: [
     { label: "Push", muscles: ["peito", "ombros", "triceps"] },

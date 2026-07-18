@@ -2,13 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Chip, Input, Label, ProgressBar, Textarea } from "@/components/ui";
+import { Button, Chip, Input, Label, ProgressBar, Textarea } from "@/components/ui";
 import { TONE_META } from "@/lib/tone";
 import type { Equipment, Goal, Tone, UserProfile } from "@/lib/types";
 import { generatePlanFromProfile, useAppStore } from "@/store/app-store";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
-import { patchPlan } from "@/lib/plan-generator";
-import { getExercise as ge } from "@/data/exercises";
 
 const GOALS: { id: Goal; title: string; blurb: string }[] = [
   {
@@ -75,7 +73,6 @@ export default function OnboardingPage() {
   const [draftPlan, setDraftPlan] = useState<ReturnType<
     typeof generatePlanFromProfile
   > | null>(null);
-  const [redesignNote, setRedesignNote] = useState("");
 
   const totalSteps = 8;
   const progress = ((step + 1) / totalSteps) * 100;
@@ -149,12 +146,6 @@ export default function OnboardingPage() {
     setDraftPlan(generatePlanFromProfile(profileDraft));
     setGenerating(false);
     setStep(7);
-  }
-
-  function applyRedesign() {
-    if (!draftPlan || !redesignNote.trim()) return;
-    setDraftPlan(patchPlan(draftPlan, redesignNote, profileDraft));
-    setRedesignNote("");
   }
 
   function finish() {
@@ -412,73 +403,18 @@ export default function OnboardingPage() {
         )}
 
         {step === 7 && draftPlan && (
-          <section className="space-y-4 animate-rise">
-            <h1 className="text-2xl font-bold">Seu plano</h1>
-            <p className="text-sm text-muted">
-              Questiona à vontade. Ex: “sou pobre, sem ricota”, “sem agachamento”.
-            </p>
-
-            <Card>
-              <h2 className="font-semibold mb-2">Treino semanal</h2>
-              <ul className="space-y-2 text-sm">
-                {draftPlan.workoutDays.map((d) => (
-                  <li key={d.weekday} className="flex justify-between gap-2 border-b border-border/50 pb-2">
-                    <span className="text-muted w-10">{WEEKDAY_LABELS[d.weekday]}</span>
-                    <span className="flex-1 font-medium">
-                      {d.isRest ? "Descanso" : d.label}
-                    </span>
-                    {!d.isRest && (
-                      <span className="text-muted">{d.exercises.length} ex.</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {!draftPlan.workoutDays.find((d) => d.weekday === new Date().getDay())
-                ?.isRest && (
-                <div className="mt-3 text-xs text-muted">
-                  Hoje:{" "}
-                  {draftPlan.workoutDays
-                    .find((d) => d.weekday === new Date().getDay())
-                    ?.exercises.map((e) => ge(e.exerciseId)?.namePt)
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-              )}
-            </Card>
-
-            <Card>
-              <h2 className="font-semibold mb-2">Alimentação</h2>
-              <p className="text-sm">
-                ~{draftPlan.nutrition.kcal} kcal · P {draftPlan.nutrition.proteinG}g · C{" "}
-                {draftPlan.nutrition.carbsG}g · G {draftPlan.nutrition.fatG}g
-              </p>
-              <ul className="mt-3 space-y-2 text-sm text-muted">
-                {draftPlan.nutrition.meals.map((m) => (
-                  <li key={m.slot}>
-                    <span className="text-ink font-medium">{m.title}: </span>
-                    {m.items[0]}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-xs text-muted">{draftPlan.nutrition.notes}</p>
-            </Card>
-
-            <div>
-              <Label>Quer mudar alguma coisa?</Label>
-              <Textarea
-                value={redesignNote}
-                onChange={(e) => setRedesignNote(e.target.value)}
-                placeholder="Ex: sou pobre, não compro ricota / não treino sexta"
-              />
-              <Button
-                variant="secondary"
-                className="mt-2 w-full"
-                onClick={applyRedesign}
-                disabled={!redesignNote.trim()}
-              >
-                Redesignar com a IA
-              </Button>
+          <section className="flex flex-col items-center justify-center text-center h-full py-16 space-y-5 animate-rise">
+            <div className="size-16 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center">
+              <span className="text-3xl">✓</span>
             </div>
+            <h1 className="text-2xl font-bold">
+              Pronto, {displayName.split(" ")[0] || "atleta"}!
+            </h1>
+            <p className="text-sm text-muted max-w-[30ch] leading-relaxed">
+              Montei um rascunho com o que você me contou. Agora vem a parte boa:
+              a gente <span className="text-ink font-medium">conversa</span> e
+              fecha treino e comida do teu jeito — no papo mesmo.
+            </p>
           </section>
         )}
       </div>
@@ -505,7 +441,7 @@ export default function OnboardingPage() {
         )}
         {step === 7 && (
           <Button className="w-full" size="lg" onClick={finish}>
-            Fechou, bora
+            Ok, vamos conversar
           </Button>
         )}
         {step > 0 && step < 7 && (

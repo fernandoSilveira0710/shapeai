@@ -26,6 +26,11 @@ import type { ChatAction } from "@/app/api/chat/route";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
 import { computePendings } from "@/lib/pendings";
+import {
+  buildDietCard,
+  buildTechReadCard,
+  buildWeekPlanCard,
+} from "@/lib/plan-cards";
 import { createSupabaseBrowser } from "@/lib/supabase/browser";
 import { pullSnapshot, pushSnapshot, type SnapshotPayload } from "@/lib/supabase/sync";
 
@@ -172,6 +177,17 @@ export const useAppStore = create<AppState & Actions>()(
                 body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
               };
             }
+          } else if (a.type === "set_schedule") {
+            const p = get().profile;
+            if (p) {
+              set({
+                profile: {
+                  ...p,
+                  trainTime: a.trainTime ?? p.trainTime,
+                  wantsReminders: a.wantsReminders ?? p.wantsReminders,
+                },
+              });
+            }
           } else if (a.type === "finish_intake") {
             const p = get().profile;
             if (p && !p.intakeCompleted) {
@@ -179,12 +195,34 @@ export const useAppStore = create<AppState & Actions>()(
                 profile: { ...p, intakeCompleted: true },
                 intakeIndex: get().intakeQueue.length,
               });
-              rich = {
-                type: "workout",
-                title: "Dossiê fechado",
-                body: "Agora é execução. Pode treinar ou ajustar o plano quando quiser.",
-                cta: "Iniciar treino",
-              };
+              // quadros visuais de aprovação: semana → dieta → leitura técnica
+              const prof = get().profile!;
+              const plan = get().plan;
+              if (plan) {
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content: "Bate o olho em como fica tua semana:",
+                    rich: buildWeekPlanCard(prof, plan),
+                  });
+                }, 600);
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content: "",
+                    rich: buildDietCard(prof, plan),
+                  });
+                }, 1300);
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content:
+                      "Se algum dia, horário ou refeição não encaixa na tua real, fala que eu remonto na hora.",
+                    rich: buildTechReadCard(prof, plan),
+                  });
+                  void get().syncToCloud();
+                }, 2100);
+              }
             }
           } else if (a.type === "log_skip") {
             // skip só narrativa por enquanto

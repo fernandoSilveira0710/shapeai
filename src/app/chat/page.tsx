@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, LogOut, Send, Sparkles } from "lucide-react";
+import {
+  Activity,
+  Camera,
+  ChevronRight,
+  Dumbbell,
+  LogOut,
+  Send,
+  Sparkles,
+  UtensilsCrossed,
+} from "lucide-react";
+import { getExercise } from "@/data/exercises";
+import { WEEKDAY_LABELS } from "@/lib/plan-generator";
 import { TabBar } from "@/components/tab-bar";
 import { Button, Chip, Sheet, TypingDots } from "@/components/ui";
 import { TONE_META } from "@/lib/tone";
@@ -10,7 +21,12 @@ import { planDayForDate } from "@/lib/plan-generator";
 import { intakeChips } from "@/lib/first-contact";
 import { cn, dayKey, nowParts, vibrate } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, RichCard } from "@/lib/types";
+import type {
+  DietPlanPayload,
+  TechReadPayload,
+  WeekPlanPayload,
+} from "@/lib/plan-cards";
 
 const GROUP_GAP_MS = 60_000;
 
@@ -111,6 +127,9 @@ export default function ChatPage() {
   const [text, setText] = useState("");
   const [weightSheet, setWeightSheet] = useState(false);
   const [weightInput, setWeightInput] = useState("");
+  const [planSheet, setPlanSheet] = useState<
+    null | { kind: "day"; weekday: number } | { kind: "meal"; slot: string }
+  >(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +204,13 @@ export default function ChatPage() {
         content: "Não consegui ler essa imagem. Tenta outra?",
       });
     }
+  }
+
+  /** fecha o sheet e deixa a pergunta pronta no composer — user completa e envia */
+  function askInComposer(prefill: string) {
+    setPlanSheet(null);
+    setText(prefill);
+    setTimeout(() => textareaRef.current?.focus(), 80);
   }
 
   function handleCameraClick() {
@@ -334,68 +360,93 @@ export default function ChatPage() {
                       isUser ? "items-end" : "items-start"
                     )}
                   >
-                    <div
-                      className={cn(
-                        "px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words",
-                        isUser
-                          ? "bg-brand text-brand-fg"
-                          : "bg-surface border border-border",
-                        isUser
-                          ? lastOfGroup
-                            ? "rounded-[16px_16px_4px_16px]"
-                            : "rounded-[16px_4px_4px_16px]"
-                          : lastOfGroup
-                            ? "rounded-[16px_16px_16px_4px]"
-                            : "rounded-[4px_16px_16px_4px]"
-                      )}
-                    >
-                      {m.imageDataUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={m.imageDataUrl}
-                          alt="Foto enviada"
-                          className="mb-2 max-h-52 w-full rounded-xl object-cover"
-                        />
-                      )}
-                      {m.role === "assistant" ? (
-                        isStreaming ? (
-                          <span className="typewriter-caret">{m.content || "…"}</span>
-                        ) : (
-                          <Typewriter
-                            text={m.content}
-                            animate={isNew}
-                            onTick={() => scrollToBottom()}
-                          />
-                        )
-                      ) : (
-                        m.content
-                      )}
-                    </div>
-
-                    {m.rich && (
+                    {(m.content.trim() || m.imageDataUrl || isStreaming) && (
                       <div
                         className={cn(
-                          "mt-1.5 w-full min-w-[220px] rounded-2xl border p-3 animate-rise",
-                          m.rich.type === "paywall"
-                            ? "border-warning/40 bg-warning/10"
-                            : "border-border bg-elevated"
+                          "px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words",
+                          isUser
+                            ? "bg-brand text-brand-fg"
+                            : "bg-surface border border-border",
+                          isUser
+                            ? lastOfGroup
+                              ? "rounded-[16px_16px_4px_16px]"
+                              : "rounded-[16px_4px_4px_16px]"
+                            : lastOfGroup
+                              ? "rounded-[16px_16px_16px_4px]"
+                              : "rounded-[4px_16px_16px_4px]"
                         )}
                       >
-                        <div className="text-sm font-semibold">{m.rich.title}</div>
-                        {m.rich.body && (
-                          <p className="text-xs text-muted mt-1">{m.rich.body}</p>
+                        {m.imageDataUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={m.imageDataUrl}
+                            alt="Foto enviada"
+                            className="mb-2 max-h-52 w-full rounded-xl object-cover"
+                          />
                         )}
-                        {m.rich.cta && (
-                          <Button
-                            size="sm"
-                            className="mt-3"
-                            onClick={() => handleCardCta(m.rich!.type)}
-                          >
-                            {m.rich.cta}
-                          </Button>
+                        {m.role === "assistant" ? (
+                          isStreaming ? (
+                            m.content ? (
+                              <span className="typewriter-caret">{m.content}</span>
+                            ) : (
+                              <TypingDots />
+                            )
+                          ) : (
+                            <Typewriter
+                              text={m.content}
+                              animate={isNew}
+                              onTick={() => scrollToBottom()}
+                            />
+                          )
+                        ) : (
+                          m.content
                         )}
                       </div>
                     )}
+
+                    {m.rich &&
+                      (m.rich.type === "week_plan" ? (
+                        <WeekPlanCard
+                          card={m.rich}
+                          onOpenDay={(wd) => {
+                            vibrate(8);
+                            setPlanSheet({ kind: "day", weekday: wd });
+                          }}
+                        />
+                      ) : m.rich.type === "diet_plan" ? (
+                        <DietPlanCard
+                          card={m.rich}
+                          onOpenMeal={(slot) => {
+                            vibrate(8);
+                            setPlanSheet({ kind: "meal", slot });
+                          }}
+                        />
+                      ) : m.rich.type === "tech_read" ? (
+                        <TechReadCard card={m.rich} />
+                      ) : (
+                        <div
+                          className={cn(
+                            "mt-1.5 w-full min-w-[220px] rounded-2xl border p-3 animate-rise",
+                            m.rich.type === "paywall"
+                              ? "border-warning/40 bg-warning/10"
+                              : "border-border bg-elevated"
+                          )}
+                        >
+                          <div className="text-sm font-semibold">{m.rich.title}</div>
+                          {m.rich.body && (
+                            <p className="text-xs text-muted mt-1">{m.rich.body}</p>
+                          )}
+                          {m.rich.cta && (
+                            <Button
+                              size="sm"
+                              className="mt-3"
+                              onClick={() => handleCardCta(m.rich!.type)}
+                            >
+                              {m.rich.cta}
+                            </Button>
+                          )}
+                        </div>
+                      ))}
 
                     {lastOfGroup && (
                       <span className="mt-1 px-1 text-[10px] text-muted/70">
@@ -409,7 +460,8 @@ export default function ChatPage() {
           );
         })}
 
-        {typing && (
+        {/* dots só quando NÃO há bolha de streaming — senão vira indicador duplo */}
+        {typing && !streamingId && (
           <div className="flex w-full justify-start mt-3 animate-rise">
             <div className="mr-2 flex w-7 shrink-0 items-end">
               <div className="size-7 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center">
@@ -533,7 +585,244 @@ export default function ChatPage() {
         </form>
       </Sheet>
 
+      {/* Sheet de detalhe: dia de treino ou refeição — sai do "perdido no chat" */}
+      <Sheet
+        open={!!planSheet}
+        onClose={() => setPlanSheet(null)}
+        title={
+          planSheet?.kind === "day"
+            ? `${WEEKDAY_LABELS[planSheet.weekday]} · ${
+                plan?.workoutDays.find((d) => d.weekday === planSheet.weekday)?.label ?? ""
+              }`
+            : planSheet?.kind === "meal"
+              ? (plan?.nutrition.meals.find((m) => m.slot === planSheet.slot)?.title ?? "Refeição")
+              : undefined
+        }
+      >
+        {planSheet?.kind === "day" &&
+          plan &&
+          (() => {
+            const d = plan.workoutDays.find((x) => x.weekday === planSheet.weekday);
+            if (!d || d.isRest) return <p className="text-sm text-muted">Dia de descanso.</p>;
+            return (
+              <div className="space-y-1.5 max-h-[50dvh] overflow-y-auto">
+                {d.exercises.map((e, i) => {
+                  const ex = getExercise(e.exerciseId);
+                  return (
+                    <div
+                      key={`${e.exerciseId}-${i}`}
+                      className="flex items-center gap-3 rounded-xl bg-surface border border-border px-3 py-2.5"
+                    >
+                      <span className="text-xl">{ex?.emoji ?? "🏋️"}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium truncate">
+                          {ex?.namePt ?? e.exerciseId}
+                        </span>
+                        <span className="block text-[11px] text-muted">
+                          {e.sets}×{e.reps} · descanso {e.restSec}s
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+                <Button
+                  variant="secondary"
+                  className="w-full mt-2"
+                  onClick={() =>
+                    askInComposer("Não tenho o aparelho de um exercício desse treino: ")
+                  }
+                >
+                  Não tenho um aparelho — perguntar
+                </Button>
+              </div>
+            );
+          })()}
+
+        {planSheet?.kind === "meal" &&
+          plan &&
+          (() => {
+            const meal = plan.nutrition.meals.find((m) => m.slot === planSheet.slot);
+            if (!meal) return null;
+            return (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted font-medium">
+                    Opções — alterna entre elas na semana:
+                  </p>
+                  {meal.items.map((op, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2.5 rounded-xl bg-surface border border-border px-3 py-2.5"
+                    >
+                      <span className="mt-0.5 size-5 shrink-0 rounded-full bg-brand/15 text-brand text-[11px] font-bold flex items-center justify-center">
+                        {i + 1}
+                      </span>
+                      <span className="text-sm">{op}</span>
+                    </div>
+                  ))}
+                </div>
+                {meal.swaps && meal.swaps.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted font-medium mb-1">Trocas rápidas:</p>
+                    {meal.swaps.map((sw) => (
+                      <p key={sw} className="text-xs text-muted">
+                        • {sw}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => askInComposer("Acabou um ingrediente, posso trocar por ")}
+                >
+                  Pedir troca — a IA remonta
+                </Button>
+              </div>
+            );
+          })()}
+      </Sheet>
+
       <TabBar />
+    </div>
+  );
+}
+
+/* ——— Quadros visuais pós-dossiê (semana, dieta, leitura técnica) ——— */
+
+function WeekPlanCard({
+  card,
+  onOpenDay,
+}: {
+  card: RichCard;
+  onOpenDay: (weekday: number) => void;
+}) {
+  const p = card.payload as WeekPlanPayload;
+  if (!p?.rows) return null;
+  return (
+    <div className="mt-1.5 w-full min-w-[250px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <Dumbbell className="size-4 text-brand" />
+        <span className="text-sm font-semibold">{card.title}</span>
+      </div>
+      <div className="p-2">
+        {p.rows.map((r) => (
+          <button
+            key={r.weekday}
+            type="button"
+            onClick={() => onOpenDay(r.weekday)}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2 py-2 text-left transition hover:bg-surface active:scale-[0.99]"
+          >
+            <span className="w-10 shrink-0 rounded-lg bg-brand text-brand-fg text-center text-xs font-bold py-1.5">
+              {r.day}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium truncate">{r.label}</span>
+              <span className="block text-[11px] text-muted">
+                {r.time ? `${r.time} · ` : ""}
+                {r.exercises} exercícios · ~{r.durationMin}min
+              </span>
+            </span>
+            <ChevronRight className="size-4 text-muted shrink-0" />
+          </button>
+        ))}
+        {p.restDays && (
+          <p className="text-[11px] text-muted px-2 pt-1.5 pb-1">
+            Descanso: {p.restDays}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DietPlanCard({
+  card,
+  onOpenMeal,
+}: {
+  card: RichCard;
+  onOpenMeal: (slot: string) => void;
+}) {
+  const p = card.payload as DietPlanPayload;
+  if (!p?.meals) return null;
+  return (
+    <div className="mt-1.5 w-full min-w-[250px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <UtensilsCrossed className="size-4 text-brand" />
+        <span className="flex-1 text-sm font-semibold">{card.title}</span>
+        <span className="text-[10px] text-muted">
+          P{p.proteinG} C{p.carbsG} G{p.fatG}
+        </span>
+      </div>
+      <div className="p-2">
+        {p.meals.map((m) => (
+          <button
+            key={m.slot}
+            type="button"
+            onClick={() => onOpenMeal(m.slot)}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2 py-2 text-left transition hover:bg-surface active:scale-[0.99]"
+          >
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium">{m.title}</span>
+              <span className="block text-[11px] text-muted truncate">
+                {m.options[0]}
+              </span>
+            </span>
+            {m.options.length > 1 && (
+              <span className="shrink-0 rounded-full bg-brand/15 text-brand text-[10px] font-semibold px-2 py-0.5">
+                +{m.options.length - 1} opções
+              </span>
+            )}
+            <ChevronRight className="size-4 text-muted shrink-0" />
+          </button>
+        ))}
+        <div className="mx-2 mt-1.5 pt-2 border-t border-border/60 space-y-1 pb-1">
+          <p className="text-[11px]">
+            <span className="text-brand font-medium">Pré-treino:</span>{" "}
+            <span className="text-muted">{p.preWorkout}</span>
+          </p>
+          <p className="text-[11px]">
+            <span className="text-brand font-medium">Pós-treino:</span>{" "}
+            <span className="text-muted">{p.postWorkout}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TechReadCard({ card }: { card: RichCard }) {
+  const p = card.payload as TechReadPayload;
+  if (!p?.imc) return null;
+  return (
+    <div className="mt-1.5 w-full min-w-[250px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <Activity className="size-4 text-brand" />
+        <span className="text-sm font-semibold">{card.title}</span>
+      </div>
+      <div className="p-3">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">{p.imc}</div>
+            <div className="text-[10px] text-muted mt-0.5">IMC</div>
+          </div>
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">
+              {p.targetKcal}
+            </div>
+            <div className="text-[10px] text-muted mt-0.5">kcal alvo</div>
+          </div>
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">
+              {p.proteinG}g
+            </div>
+            <div className="text-[10px] text-muted mt-0.5">proteína/dia</div>
+          </div>
+        </div>
+        <p className="text-[11px] text-muted mt-2.5">
+          IMC: {p.imcLabel} · TDEE ~{p.tdee} kcal · {p.goalNote}
+        </p>
+      </div>
     </div>
   );
 }

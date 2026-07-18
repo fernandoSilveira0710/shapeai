@@ -113,31 +113,48 @@ function buildNutrition(
     /lactose|leite/i.test(r)
   );
 
-  const proteinBreakfast = noLactose
-    ? "Ovos mexidos (3) + pão"
+  // 2-3 opções por refeição — usuário alterna, não come igual todo dia
+  const breakfastOptions = noLactose
+    ? ["Ovos mexidos (3) + pão", "Tapioca + ovo + café", "Banana + pasta de amendoim + café"]
     : cheap
-      ? "Ovos (2) + aveia com leite"
-      : "Iogurte grego + aveia + banana";
+      ? ["Ovos (2) + aveia com leite", "Pão francês + ovo + café", "Vitamina de banana + aveia"]
+      : ["Iogurte grego + aveia + banana", "Ovos mexidos + pão + fruta", "Tapioca + ovo + café"];
 
-  const proteinLunch = cheap
-    ? "Arroz, feijão, frango desfiado ou ovo, salada"
-    : "Arroz, feijão, patinho/frango, legumes";
+  const lunchOptions = cheap
+    ? [
+        "Arroz, feijão, frango desfiado, salada",
+        "Arroz, feijão, ovos (3), legumes",
+        "Macarrão + atum/sardinha + salada",
+      ]
+    : [
+        "Arroz, feijão, patinho ou frango, legumes",
+        "Arroz, feijão, peixe grelhado, salada",
+        "Arroz, frango desfiado, purê, legumes",
+      ];
 
-  const dinner = cheap
-    ? "Batata doce ou arroz + ovos/atum + salada"
-    : "Macarrão integral + frango + legumes";
+  const dinnerOptions = cheap
+    ? [
+        "Batata doce ou arroz + ovos/atum + salada",
+        "Sopa de legumes + frango desfiado",
+        "Cuscuz + ovo + queijo (se rolar)",
+      ]
+    : [
+        "Macarrão integral + frango + legumes",
+        "Omelete caprichada + arroz + salada",
+        "Peixe + purê + legumes",
+      ];
 
-  const snack = noLactose
-    ? "Banana + pasta de amendoim + café"
+  const snackOptions = noLactose
+    ? ["Banana + pasta de amendoim + café", "Mix de castanhas + fruta"]
     : cheap
-      ? "Pão com ovo ou iogurte"
-      : "Whey + fruta (opcional)";
+      ? ["Pão com ovo", "Iogurte + banana", "Fruta + café"]
+      : ["Whey + fruta", "Iogurte grego + granola", "Sanduíche natural"];
 
   const meals = [
     {
       slot: "cafe",
       title: "Café da manhã",
-      items: [proteinBreakfast],
+      items: breakfastOptions,
       swaps: cheap
         ? ["Sem ovo → atum enlatado", "Sem aveia → pão francês + ovo"]
         : ["Sem iogurte → cottage ou ovos"],
@@ -145,22 +162,22 @@ function buildNutrition(
     {
       slot: "almoco",
       title: "Almoço",
-      items: [proteinLunch],
+      items: lunchOptions,
       swaps: [
         "Sem frango → ovo, atum ou lentilha + ovo",
-        "Sem ricota → ovo, frango ou iogurte proteico",
+        "Acabou a proteína → peixe, carne moída ou ovos na mesma medida",
       ],
     },
     {
       slot: "lanche",
       title: "Lanche",
-      items: [snack],
+      items: snackOptions,
       swaps: ["Fora de casa → sanduíche natural ou marmita"],
     },
     {
       slot: "janta",
       title: "Janta",
-      items: [dinner],
+      items: dinnerOptions,
       swaps: cheap
         ? ["Delivery → monta prato com arroz + proteína + salada"]
         : ["Restaurante → prioriza grelhado + salada + arroz"],

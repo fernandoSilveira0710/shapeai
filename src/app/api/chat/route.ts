@@ -10,7 +10,8 @@ export type ChatAction =
   | { type: "log_meal"; slot: string; description: string; adherence: string }
   | { type: "redesign_plan"; instruction: string }
   | { type: "log_skip"; reason?: string }
-  | { type: "finish_intake" };
+  | { type: "finish_intake" }
+  | { type: "set_schedule"; trainTime?: string; wantsReminders?: boolean };
 
 /**
  * Chat streaming + tools.
@@ -135,6 +136,21 @@ export async function POST(req: NextRequest) {
           }),
           execute: async ({ reason }) => {
             actions.push({ type: "log_skip", reason });
+            return { ok: true };
+          },
+        }),
+        set_schedule: tool({
+          description:
+            "Salva o horário combinado de treino e/ou se o usuário quer ser lembrado (notificação). Chame assim que ele informar.",
+          inputSchema: z.object({
+            trainTime: z
+              .string()
+              .optional()
+              .describe("horário de treino HH:MM, ex 06:00"),
+            wantsReminders: z.boolean().optional(),
+          }),
+          execute: async ({ trainTime, wantsReminders }) => {
+            actions.push({ type: "set_schedule", trainTime, wantsReminders });
             return { ok: true };
           },
         }),

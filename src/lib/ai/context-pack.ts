@@ -11,6 +11,7 @@ export type ContextPackInput = Pick<
 /** Context pack legível pro system prompt (AI-ENGINE). */
 export function buildContextPack(s: ContextPackInput): string {
   if (!s.profile) return "(sem perfil)";
+  const intakeOpen = s.profile.intakeCompleted === false;
   const { time, weekday, hour } = nowParts();
   const today = todayKey();
   const day = s.plan ? planDayForDate(s.plan) : null;
@@ -28,6 +29,16 @@ export function buildContextPack(s: ContextPackInput): string {
     `Agora: ${weekday}, ${time} (hora ${hour}) TZ America/Sao_Paulo`,
     `Nome: ${s.profile.displayName}`,
     `Objetivo: ${s.profile.goal} · ${s.profile.weightKg}kg · ${s.profile.heightCm}cm · ${s.profile.age} anos`,
+    (() => {
+      const h = s.profile.heightCm / 100;
+      const imc = Math.round((s.profile.weightKg / (h * h)) * 10) / 10;
+      const bmr =
+        10 * s.profile.weightKg + 6.25 * s.profile.heightCm - 5 * s.profile.age + 5;
+      return `Leitura técnica: IMC ${imc} · TDEE estimado ~${Math.round(bmr * 1.45)} kcal`;
+    })(),
+    s.profile.trainTime
+      ? `Horário combinado de treino: ${s.profile.trainTime} · lembretes: ${s.profile.wantsReminders ? "SIM" : "não definido"}`
+      : "",
     `Experiência: ${s.profile.experience} · dias treino: ${s.profile.trainDays.join(",") || "—"} · ${s.profile.trainDurationMin}min`,
     `Equipamento: ${s.profile.equipment.join(", ")}`,
     `Lesões: ${s.profile.injuries}`,
@@ -48,12 +59,15 @@ export function buildContextPack(s: ContextPackInput): string {
     lastWeight
       ? `Último peso: ${lastWeight.value}kg em ${lastWeight.measuredAt.slice(0, 10)}`
       : "Sem peso registrado ainda",
-    `Refeições hoje: ${mealsToday.length ? mealsToday.map((m) => `${m.slot}:${m.description}`).join("; ") : "nenhuma"}`,
+    // agenda do dia só existe DEPOIS do dossiê — senão a IA cobra café no meio da entrevista
+    intakeOpen
+      ? ""
+      : `Refeições hoje: ${mealsToday.length ? mealsToday.map((m) => `${m.slot}:${m.description}`).join("; ") : "nenhuma"}`,
     `Assinatura app: ${s.subscription} (free=limitado, basic=chat+treino+nutri texto, pro=vision)`,
     s.profile.intakeCompleted === false
       ? `FASE: primeiro contato / dossiê ainda aberto — entrevista em andamento (${s.profile.intakeNotes?.length ?? 0} respostas colhidas).${
-          (s.profile.intakeNotes?.length ?? 0) >= 9
-            ? " JÁ TEM MATERIAL SUFICIENTE: encerre agora com finish_intake."
+          (s.profile.intakeNotes?.length ?? 0) >= 7
+            ? " JÁ TEM MATERIAL SUFICIENTE: encerre AGORA com finish_intake — não faça mais perguntas."
             : ""
         }`
       : "FASE: dossiê de intake completo",
@@ -62,7 +76,7 @@ export function buildContextPack(s: ContextPackInput): string {
           .map((n) => `- [${n.metricLabel || n.key}] ${n.answer}`)
           .join("\n")}`
       : "",
-    pendingsForContext(s),
+    intakeOpen ? "" : pendingsForContext(s),
     (() => {
       const lastFb = [...s.sessions]
         .filter((x) => x.feedback)

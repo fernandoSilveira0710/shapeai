@@ -52,6 +52,10 @@ export interface UserProfile {
     at: string;
     metricLabel?: string;
   }[];
+  /** horário combinado de treino (ex.: "06:00") — vem da entrevista */
+  trainTime?: string;
+  /** quer ser lembrado/cobrado (notificação) */
+  wantsReminders?: boolean;
 }
 
 export interface Exercise {
@@ -116,7 +120,10 @@ export type RichCardType =
   | "meal_check"
   | "insight"
   | "plan_summary"
-  | "paywall";
+  | "paywall"
+  | "week_plan"
+  | "diet_plan"
+  | "tech_read";
 
 export interface RichCard {
   type: RichCardType;
@@ -124,6 +131,8 @@ export interface RichCard {
   body?: string;
   cta?: string;
   meta?: Record<string, string | number | boolean>;
+  /** payload estruturado dos cards visuais (week_plan/diet_plan/tech_read) */
+  payload?: unknown;
 }
 
 export interface ChatMessage {

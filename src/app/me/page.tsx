@@ -27,8 +27,12 @@ export default function MePage() {
   const [syncMsg, setSyncMsg] = useState("");
 
   useEffect(() => {
-    if (!profile?.onboardingCompleted) router.replace("/");
-  }, [profile, router]);
+    if (!profile?.onboardingCompleted) {
+      router.replace("/");
+      return;
+    }
+    if (!profile.intakeCompleted || !plan?.approvedAt) router.replace("/chat");
+  }, [profile, plan, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

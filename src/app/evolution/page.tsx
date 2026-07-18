@@ -27,8 +27,13 @@ export default function EvolutionPage() {
   const [daySheet, setDaySheet] = useState<string | null>(null); // YYYY-MM-DD
 
   useEffect(() => {
-    if (!profile?.onboardingCompleted) router.replace("/");
-  }, [profile, router]);
+    if (!profile?.onboardingCompleted) {
+      router.replace("/");
+      return;
+    }
+    // aba só libera com dossiê fechado + plano aprovado — bate URL direto não pula a fila
+    if (!profile.intakeCompleted || !plan?.approvedAt) router.replace("/chat");
+  }, [profile, plan, router]);
 
   const completed = useMemo(
     () =>

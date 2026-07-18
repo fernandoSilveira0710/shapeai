@@ -25,6 +25,7 @@ import { streamLlmReply } from "@/lib/llm-client";
 import type { ChatAction } from "@/app/api/chat/route";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
+import { getExercise } from "@/data/exercises";
 import { computePendings } from "@/lib/pendings";
 import { requestReminderPermission } from "@/lib/reminders";
 import {
@@ -42,6 +43,21 @@ function uid() {
 }
 
 /** Ack curto no tom + próxima pergunta (intake) */
+/** Mensagem de liberação — plano aprovado, explica o que destrancou */
+function unlockMessage(tone: UserProfile["tone"], name: string) {
+  const n = name.split(" ")[0] || "campeão";
+  switch (tone) {
+    case "sargento":
+      return `PLANO SELADO, ${n.toUpperCase()}. A PARTIR DE AGORA:\n\n• "BORA" ABRE O TREINO DO DIA\n• REPORTA REFEIÇÃO E PESO QUANDO EU PEDIR\n• ABA EVOLUÇÃO: HISTÓRICO, CALENDÁRIO, PROGRESSÃO DE CARGA\n• ABA EU: PERFIL, TOM, ASSINATURA\n\nQUER REVER TREINO OU DIETA? BOTÕES AÍ EMBAIXO. EXECUÇÃO COMEÇA JÁ.`;
+    case "nutella":
+      return `Fechado com muito carinho, ${n}! 💛 A partir de agora:\n\n• Quando quiser treinar, é só me chamar com um "bora"\n• Vou te perguntar de refeição e peso no dia a dia\n• A aba Evolução guarda teu progresso — peso, calendário, cargas\n• A aba Eu é teu cantinho: perfil, tom, assinatura\n\nSe quiser rever o treino ou a dieta, os botões estão logo abaixo. Vamos juntos! ✨`;
+    case "low_profile":
+      return `Plano fechado, ${n}. Liberado:\n\n• "bora" abre o treino do dia\n• Registro de refeição e peso quando eu pedir\n• Aba Evolução: histórico e progressão\n• Aba Eu: perfil e assinatura\n\nBotões "Ver treino"/"Ver dieta" abaixo pra rever quando quiser.`;
+    default:
+      return `Fechou, ${n}! 🤝 A partir de agora:\n\n• Chama "bora" que eu abro o treino do dia\n• Vou te cobrar refeição e peso na hora certa\n• Aba Evolução: teu histórico, calendário, progressão de carga\n• Aba Eu: perfil, tom, assinatura\n\nQuer rever o treino ou a dieta? Os botões aí embaixo abrem na hora. Bora nessa!`;
+  }
+}
+
 function sayAckThenAsk(tone: UserProfile["tone"], userAnswer: string, nextAsk: string) {
   const short =
     userAnswer.length > 80 ? userAnswer.slice(0, 77) + "…" : userAnswer;
@@ -93,6 +109,7 @@ type Actions = {
   ) => void;
   logWeight: (kg: number) => void;
   approvePlan: () => void;
+  showPlanCards: (kind: "week" | "diet") => void;
   resetAll: () => void;
   signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
@@ -234,6 +251,55 @@ export const useAppStore = create<AppState & Actions>()(
                 set({
                   plan: { ...plan, workoutDays: days, version: plan.version + 1 },
                 });
+              }
+            }
+          } else if (a.type === "swap_exercise") {
+            const plan = get().plan;
+            const toEx = plan ? getExercise(a.toExerciseId) : undefined;
+            if (plan && toEx) {
+              const days = plan.workoutDays.map((d) => ({ ...d }));
+              const day = days.find((d) => d.weekday === a.weekday);
+              const idx = day?.exercises.findIndex(
+                (e) => e.exerciseId === a.fromExerciseId
+              );
+              if (day && idx !== undefined && idx !== -1) {
+                const old = day.exercises[idx];
+                day.exercises = [...day.exercises];
+                day.exercises[idx] = {
+                  ...old,
+                  exerciseId: a.toExerciseId,
+                  restSec: toEx.defaultRestSec,
+                  notes: "Substituído a pedido.",
+                };
+                const nextPlan: Plan = {
+                  ...plan,
+                  workoutDays: days,
+                  version: plan.version + 1,
+                  source: "ai",
+                  approvedAt: undefined,
+                };
+                set({ plan: nextPlan });
+                // re-mostra o quadro atualizado + pede aprovação de novo
+                pruneOldPlanCards(["week_plan", "approve_plan"]);
+                const prof = get().profile;
+                if (prof) {
+                  setTimeout(() => {
+                    get().addMessage({
+                      role: "assistant",
+                      content: "Treino ajustado — ficou assim:",
+                      rich: buildWeekPlanCard(prof, nextPlan),
+                    });
+                    get().addMessage({
+                      role: "assistant",
+                      content: "",
+                      rich: {
+                        type: "approve_plan",
+                        title: `Fechou assim? (plano v${nextPlan.version})`,
+                      },
+                    });
+                    void get().syncToCloud();
+                  }, 700);
+                }
               }
             }
           } else if (a.type === "log_past_workout") {
@@ -1112,22 +1178,49 @@ export const useAppStore = create<AppState & Actions>()(
         approvePlan: () => {
           const { plan, profile } = get();
           if (!plan || !profile) return;
-          set({ plan: { ...plan, approvedAt: new Date().toISOString() } });
-          const tone = profile.tone;
+          const approved: Plan = { ...plan, approvedAt: new Date().toISOString() };
+          set({ plan: approved });
+          // aprovação fecha o card pendente — some do chat, não fica card morto
+          pruneOldPlanCards(["approve_plan"]);
           get().addMessage({ role: "user", content: "Fechou, aprovo ✅" });
           get().addMessage({
             role: "system",
             content: `Plano v${plan.version} aprovado`,
           });
+          setTimeout(() => {
+            get().addMessage({
+              role: "assistant",
+              content: "Fica assim, oficialmente:",
+              rich: buildWeekPlanCard(profile, approved),
+            });
+          }, 500);
+          setTimeout(() => {
+            get().addMessage({
+              role: "assistant",
+              content: "",
+              rich: buildDietCard(profile, approved),
+            });
+          }, 1100);
+          setTimeout(() => {
+            get().addMessage({
+              role: "assistant",
+              content: unlockMessage(profile.tone, profile.displayName),
+            });
+            void get().syncToCloud();
+          }, 1800);
+        },
+
+        showPlanCards: (kind) => {
+          const { plan, profile } = get();
+          if (!plan || !profile) return;
+          get().addMessage({
+            role: "user",
+            content: kind === "week" ? "Ver treino" : "Ver dieta",
+          });
           reply(
-            coachReply(
-              tone,
-              "",
-              "plan_ok",
-              undefined
-            ),
-            undefined,
-            500
+            "",
+            kind === "week" ? buildWeekPlanCard(profile, plan) : buildDietCard(profile, plan),
+            350
           );
         },
 

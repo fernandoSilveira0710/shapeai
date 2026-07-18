@@ -1,6 +1,7 @@
 import type { AppState, ChatMessage } from "@/lib/types";
 import { planDayForDate } from "@/lib/plan-generator";
 import { pendingsForContext } from "@/lib/pendings";
+import { EXERCISES } from "@/data/exercises";
 import { nowParts, todayKey } from "@/lib/utils";
 
 export type ContextPackInput = Pick<
@@ -56,6 +57,9 @@ export function buildContextPack(s: ContextPackInput): string {
       ? `Opções de refeição atuais:\n${s.plan.nutrition.meals
           .map((m) => `${m.title}: ${m.items.join(" | ")}`)
           .join("\n")}`
+      : "",
+    s.plan
+      ? `Catálogo de exercícios disponível (id: nome — grupo/equipamento). Ao trocar exercício com swap_exercise, toExerciseId TEM que ser um id exato desta lista:\n${EXERCISES.map((e) => `${e.id}: ${e.namePt} — ${e.muscleGroup}/${e.equipment}`).join("\n")}`
       : "",
     s.plan
       ? `Refeições modelo: ${s.plan.nutrition.meals.map((m) => `${m.title}: ${m.items[0]}`).join(" | ")}`

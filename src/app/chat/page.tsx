@@ -124,6 +124,7 @@ export default function ChatPage() {
   const logWeight = useAppStore((s) => s.logWeight);
   const signOut = useAppStore((s) => s.signOut);
   const approvePlan = useAppStore((s) => s.approvePlan);
+  const showPlanCards = useAppStore((s) => s.showPlanCards);
   const sessions = useAppStore((s) => s.sessions);
   const intakeQueue = useAppStore((s) => s.intakeQueue);
   const intakeIndex = useAppStore((s) => s.intakeIndex);
@@ -283,14 +284,22 @@ export default function ChatPage() {
   );
   const intakeOpen = profile.intakeCompleted === false;
   const currentIntakeKey = intakeOpen ? intakeQueue[intakeIndex] ?? null : null;
+  // dossiê fechado mas plano ainda não aprovado: nada de "Bora treinar" etc,
+  // o card approve_plan já tem os botões — chips ficam neutros
+  const planPending = !intakeOpen && !plan?.approvedAt;
+  const unlocked = !intakeOpen && !!plan?.approvedAt;
   const chips = intakeOpen
     ? [...intakeChips(currentIntakeKey), "Depois a gente fala"]
-    : ([
-        day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
-        "Já almocei",
-        "Registrar peso",
-        "Como estou?",
-      ].filter(Boolean) as string[]);
+    : planPending
+      ? ["Pode perguntar", "Quero ajustar"]
+      : ([
+          day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
+          "Já almocei",
+          "Registrar peso",
+          "Como estou?",
+          "Ver treino",
+          "Ver dieta",
+        ].filter(Boolean) as string[]);
 
   return (
     <div className="app-shell">
@@ -537,6 +546,14 @@ export default function ChatPage() {
                 if (c === "Registrar peso") {
                   setWeightInput(String(profile.weightKg));
                   setWeightSheet(true);
+                  return;
+                }
+                if (c === "Ver treino") {
+                  showPlanCards("week");
+                  return;
+                }
+                if (c === "Ver dieta") {
+                  showPlanCards("diet");
                   return;
                 }
                 handleSend(c === "Bora treinar" ? "bora" : c);

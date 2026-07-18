@@ -14,7 +14,8 @@ export type ChatAction =
   | { type: "set_schedule"; trainTime?: string; wantsReminders?: boolean }
   | { type: "swap_food"; from: string; to: string }
   | { type: "swap_workout_day"; withWeekday: number }
-  | { type: "log_past_workout"; date: string; note?: string };
+  | { type: "log_past_workout"; date: string; note?: string }
+  | { type: "swap_exercise"; weekday: number; fromExerciseId: string; toExerciseId: string };
 
 /**
  * Chat streaming + tools.
@@ -164,6 +165,19 @@ export async function POST(req: NextRequest) {
           execute: async ({ date, note }) => {
             actions.push({ type: "log_past_workout", date, note });
             return { ok: true, message: `Treino de ${date} registrado.` };
+          },
+        }),
+        swap_exercise: tool({
+          description:
+            "Troca um exercício do treino por outro do catálogo (contexto tem a lista de ids válidos). Use quando o usuário não tem o aparelho/equipamento, tem dor específica com aquele movimento, ou não gosta. weekday = dia da semana (0=dom..6=sáb) do treino a ajustar. toExerciseId DEVE ser um id exato do catálogo do contexto — nunca invente id.",
+          inputSchema: z.object({
+            weekday: z.number().min(0).max(6),
+            fromExerciseId: z.string().describe("id do exercício atual a substituir"),
+            toExerciseId: z.string().describe("id exato do catálogo, do novo exercício"),
+          }),
+          execute: async ({ weekday, fromExerciseId, toExerciseId }) => {
+            actions.push({ type: "swap_exercise", weekday, fromExerciseId, toExerciseId });
+            return { ok: true, message: "Exercício trocado no plano." };
           },
         }),
         swap_food: tool({

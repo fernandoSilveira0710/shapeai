@@ -1,4 +1,11 @@
-import type { MealLog, Plan, RichCard, UserProfile, WorkoutSession } from "@/lib/types";
+import type {
+  BodyMetric,
+  MealLog,
+  Plan,
+  RichCard,
+  UserProfile,
+  WorkoutSession,
+} from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
 import { getExercise } from "@/data/exercises";
 import { dayKey, weekdayOfKey } from "@/lib/utils";
@@ -256,4 +263,68 @@ export function buildTechReadCard(profile: UserProfile, plan: Plan): RichCard {
     title: "Leitura técnica de largada",
     payload,
   };
+}
+
+export type ProgressPayload = {
+  streak: number;
+  workoutsThisWeek: number;
+  mealAdherencePct: number | null;
+  weight: { current: number; deltaWeek: number | null; trend: "down" | "up" | "flat" } | null;
+};
+
+/** Card de "Como estou?" — resumo curto, não substitui a aba Evolução. */
+export function buildProgressCard(
+  sessions: WorkoutSession[],
+  mealLogs: MealLog[],
+  metrics: BodyMetric[]
+): RichCard {
+  const completed = sessions.filter(
+    (s) => s.status === "completed" || s.status === "partial"
+  );
+
+  // streak: dias consecutivos com treino, contando hoje pra trás
+  const trainedDates = new Set(completed.map((s) => s.date));
+  let streak = 0;
+  for (let i = 0; i < 60; i++) {
+    const k = dayKey(-i);
+    if (trainedDates.has(k)) streak++;
+    else if (i > 0) break;
+  }
+
+  const weekAgo = dayKey(-6);
+  const workoutsThisWeek = completed.filter((s) => s.date >= weekAgo).length;
+
+  const mealsWeek = mealLogs.filter((m) => m.loggedAt.slice(0, 10) >= weekAgo);
+  const onPlanWeek = mealsWeek.filter((m) => m.adherence === "on_plan").length;
+  const mealAdherencePct =
+    mealsWeek.length > 0 ? Math.round((onPlanWeek / mealsWeek.length) * 100) : null;
+
+  const weights = metrics
+    .filter((m) => m.kind === "weight")
+    .sort((a, b) => a.measuredAt.localeCompare(b.measuredAt));
+  const lastWeight = weights[weights.length - 1];
+  const weekAgoIso = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const weekAgoWeight = [...weights].reverse().find((w) => w.measuredAt <= weekAgoIso);
+  const weight = lastWeight
+    ? {
+        current: lastWeight.value,
+        deltaWeek: weekAgoWeight
+          ? Math.round((lastWeight.value - weekAgoWeight.value) * 10) / 10
+          : null,
+        trend:
+          weekAgoWeight && lastWeight.value < weekAgoWeight.value
+            ? ("down" as const)
+            : weekAgoWeight && lastWeight.value > weekAgoWeight.value
+              ? ("up" as const)
+              : ("flat" as const),
+      }
+    : null;
+
+  const payload: ProgressPayload = {
+    streak,
+    workoutsThisWeek,
+    mealAdherencePct,
+    weight,
+  };
+  return { type: "progress", title: "Como você tá", payload };
 }

@@ -23,7 +23,13 @@ export type ChatAction =
       sets?: number;
       reps?: string;
     }
-  | { type: "remove_exercise"; weekday: number; exerciseId: string };
+  | { type: "remove_exercise"; weekday: number; exerciseId: string }
+  | {
+      type: "show_card";
+      kind: "week_workout" | "week_diet" | "day_workout" | "day_meal" | "progress";
+    }
+  | { type: "open_weight_log" }
+  | { type: "open_measure_log" };
 
 /**
  * Chat streaming + tools.
@@ -115,19 +121,49 @@ export async function POST(req: NextRequest) {
           },
         }),
         log_meal: tool({
-          description: "Registra refeição descrita pelo usuário.",
+          description:
+            "Registra refeição descrita pelo usuário. SEMPRE chame na hora — nunca pergunte 'posso registrar?' antes, registro é fato, não pedido de permissão. Infira o slot pela hora atual do contexto se ele não disser qual refeição foi.",
           inputSchema: z.object({
             slot: z
               .enum(["cafe", "almoco", "lanche", "janta", "outro"])
-              .describe("refeição"),
+              .describe("refeição — infira pela hora se não for dito"),
             description: z.string(),
             adherence: z
               .enum(["on_plan", "partial", "off"])
-              .describe("aderência ao plano"),
+              .describe("aderência ao plano — off pra besteira/fora do plano"),
           }),
           execute: async ({ slot, description, adherence }) => {
             actions.push({ type: "log_meal", slot, description, adherence });
             return { ok: true, slot };
+          },
+        }),
+        show_card: tool({
+          description:
+            "Mostra o card visual pedido pelo usuário — SEMPRE que ele quiser VER treino, dieta ou progresso, chame isso em vez de descrever em texto (o app renderiza o card bonito, e texto duplicando a lista fica redundante e feio). Funciona igual seja balão clicado ou pedido digitado. kinds: week_workout (treino da semana inteira), week_diet (dieta/opções da semana inteira), day_workout (treino de hoje especificamente), day_meal (a refeição do horário atual), progress (resumo de evolução: treinos, streak, tendência de peso — para 'como estou', 'como tô indo', 'meu progresso').",
+          inputSchema: z.object({
+            kind: z.enum(["week_workout", "week_diet", "day_workout", "day_meal", "progress"]),
+          }),
+          execute: async ({ kind }) => {
+            actions.push({ type: "show_card", kind });
+            return { ok: true, message: "Card mostrado no app." };
+          },
+        }),
+        open_weight_log: tool({
+          description:
+            "Abre o registro de peso quando o usuário QUER registrar mas ainda não mandou o número (ex: 'quero registrar meu peso', 'bora pesar'). Se ele já mandou o número, use log_weight direto, não isto.",
+          inputSchema: z.object({}),
+          execute: async () => {
+            actions.push({ type: "open_weight_log" });
+            return { ok: true };
+          },
+        }),
+        open_measure_log: tool({
+          description:
+            "Abre o registro de medidas (cintura/peito/braço/coxa) quando o usuário quer registrar mas ainda não mandou os números. Se ele já mandou números com as partes do corpo, isso já é salvo automaticamente pelo app — não precisa desta tool.",
+          inputSchema: z.object({}),
+          execute: async () => {
+            actions.push({ type: "open_measure_log" });
+            return { ok: true };
           },
         }),
         redesign_plan: tool({

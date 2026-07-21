@@ -12,6 +12,8 @@ import {
   Moon,
   Send,
   Sparkles,
+  TrendingDown,
+  TrendingUp,
   UtensilsCrossed,
 } from "lucide-react";
 import { getExercise } from "@/data/exercises";
@@ -30,6 +32,7 @@ import type {
   DayMealPayload,
   DayWorkoutPayload,
   DietPlanPayload,
+  ProgressPayload,
   TechReadPayload,
   WeekPlanPayload,
 } from "@/lib/plan-cards";
@@ -127,16 +130,26 @@ export default function ChatPage() {
   const addMessage = useAppStore((s) => s.addMessage);
   const logWeight = useAppStore((s) => s.logWeight);
   const logMeal = useAppStore((s) => s.logMeal);
+  const logMeasure = useAppStore((s) => s.logMeasure);
   const signOut = useAppStore((s) => s.signOut);
   const approvePlan = useAppStore((s) => s.approvePlan);
   const showPlanCards = useAppStore((s) => s.showPlanCards);
   const sessions = useAppStore((s) => s.sessions);
   const intakeQueue = useAppStore((s) => s.intakeQueue);
   const intakeIndex = useAppStore((s) => s.intakeIndex);
+  const uiRequest = useAppStore((s) => s.uiRequest);
+  const clearUiRequest = useAppStore((s) => s.clearUiRequest);
 
   const [text, setText] = useState("");
   const [weightSheet, setWeightSheet] = useState(false);
   const [weightInput, setWeightInput] = useState("");
+  const [measureSheet, setMeasureSheet] = useState(false);
+  const [measureInputs, setMeasureInputs] = useState({
+    waist: "",
+    chest: "",
+    arm: "",
+    thigh: "",
+  });
   const [planSheet, setPlanSheet] = useState<
     null | { kind: "day"; weekday: number } | { kind: "meal"; slot: string }
   >(null);
@@ -154,6 +167,18 @@ export default function ChatPage() {
     }
     hydrateOpening();
   }, [profile, router, hydrateOpening]);
+
+  // ponte store→UI: a IA pediu (via tool) pra abrir um sheet que ela não controla
+  useEffect(() => {
+    if (uiRequest === "open_weight_sheet") {
+      setWeightInput(String(profile?.weightKg ?? ""));
+      setWeightSheet(true);
+      clearUiRequest();
+    } else if (uiRequest === "open_measure_sheet") {
+      setMeasureSheet(true);
+      clearUiRequest();
+    }
+  }, [uiRequest, profile, clearUiRequest]);
 
   function scrollToBottom(force = false) {
     const el = scrollRef.current;
@@ -483,6 +508,8 @@ export default function ChatPage() {
                           }}
                           onLogOther={() => askInComposer("Já comi, mas foi: ")}
                         />
+                      ) : m.rich.type === "progress" ? (
+                        <ProgressCard card={m.rich} />
                       ) : m.rich.type === "approve_plan" ? (
                         <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-brand/40 bg-brand/5 p-3.5 animate-rise">
                           <div className="text-sm font-semibold mb-3">
@@ -599,6 +626,10 @@ export default function ChatPage() {
                   showPlanCards("day-meal");
                   return;
                 }
+                if (c === "Como estou?") {
+                  showPlanCards("progress");
+                  return;
+                }
                 handleSend(c === "Bora treinar" ? "bora" : c);
               }}
             >
@@ -689,6 +720,67 @@ export default function ChatPage() {
           <p className="text-xs text-muted mt-2">
             Mesmo horário, mesma balança — a tendência é o que importa.
           </p>
+          <Button type="submit" size="lg" className="w-full mt-4">
+            Salvar
+          </Button>
+        </form>
+      </Sheet>
+
+      <Sheet
+        open={measureSheet}
+        onClose={() => setMeasureSheet(false)}
+        title="Medidas de hoje"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const kinds = ["waist", "chest", "arm", "thigh"] as const;
+            const saved: string[] = [];
+            for (const kind of kinds) {
+              const raw = measureInputs[kind];
+              const n = Number(raw.replace(",", "."));
+              if (raw.trim() && n >= 15 && n <= 220) {
+                logMeasure(kind, n);
+                saved.push(`${n}cm`);
+              }
+            }
+            if (saved.length) {
+              vibrate(15);
+              addMessage({
+                role: "assistant",
+                content: `Medidas salvas. Daqui 2 semanas a gente compara — é aí que o shape aparece.`,
+              });
+            }
+            setMeasureSheet(false);
+            setMeasureInputs({ waist: "", chest: "", arm: "", thigh: "" });
+          }}
+        >
+          <p className="text-xs text-muted mb-3">
+            Só preenche o que for medir agora — o resto fica em branco.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                ["waist", "Cintura"],
+                ["chest", "Peito"],
+                ["arm", "Braço"],
+                ["thigh", "Coxa"],
+              ] as const
+            ).map(([kind, label]) => (
+              <label key={kind} className="block">
+                <span className="block text-xs text-muted mb-1">{label} (cm)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={measureInputs[kind]}
+                  onChange={(e) =>
+                    setMeasureInputs((m) => ({ ...m, [kind]: e.target.value }))
+                  }
+                  className="w-full h-12 rounded-xl bg-surface border border-border px-3 text-lg font-bold text-center tabular-nums outline-none focus:border-brand/60"
+                />
+              </label>
+            ))}
+          </div>
           <Button type="submit" size="lg" className="w-full mt-4">
             Salvar
           </Button>
@@ -1130,6 +1222,66 @@ function DayMealCard({
         >
           Comi outra coisa — escrever
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ProgressCard({ card }: { card: RichCard }) {
+  const p = card.payload as ProgressPayload;
+  if (!p) return null;
+  return (
+    <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <Activity className="size-4 text-brand" />
+        <span className="text-sm font-semibold">{card.title}</span>
+      </div>
+      <div className="p-3 space-y-3">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">{p.streak}</div>
+            <div className="text-[10px] text-muted mt-0.5">streak</div>
+          </div>
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">
+              {p.workoutsThisWeek}
+            </div>
+            <div className="text-[10px] text-muted mt-0.5">treinos/7d</div>
+          </div>
+          <div className="rounded-xl bg-surface border border-border p-2.5">
+            <div className="text-xl font-bold tabular-nums text-brand">
+              {p.mealAdherencePct !== null ? `${p.mealAdherencePct}%` : "—"}
+            </div>
+            <div className="text-[10px] text-muted mt-0.5">no plano</div>
+          </div>
+        </div>
+        {p.weight ? (
+          <div className="flex items-center gap-2 rounded-xl bg-surface border border-border p-2.5">
+            <span className="text-sm font-medium flex-1">
+              Peso: <span className="tabular-nums">{p.weight.current}kg</span>
+            </span>
+            {p.weight.deltaWeek !== null && p.weight.deltaWeek !== 0 && (
+              <span
+                className={cn(
+                  "flex items-center gap-0.5 text-xs font-semibold rounded-full px-2 py-0.5",
+                  p.weight.trend === "down"
+                    ? "bg-brand/15 text-brand"
+                    : "bg-warning/15 text-warning"
+                )}
+              >
+                {p.weight.trend === "down" ? (
+                  <TrendingDown className="size-3" />
+                ) : (
+                  <TrendingUp className="size-3" />
+                )}
+                {p.weight.deltaWeek > 0 ? "+" : ""}
+                {p.weight.deltaWeek}kg/7d
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted">Ainda sem peso registrado.</p>
+        )}
       </div>
     </div>
   );

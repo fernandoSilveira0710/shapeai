@@ -39,6 +39,7 @@ import {
   buildDayMealCard,
   buildDayWorkoutCard,
   buildDietCard,
+  buildProgressCard,
   buildTechReadCard,
   buildWeekPlanCard,
 } from "@/lib/plan-cards";
@@ -130,7 +131,11 @@ type Actions = {
   ) => void;
   logWeight: (kg: number) => void;
   approvePlan: () => void;
-  showPlanCards: (kind: "week" | "diet" | "day-workout" | "day-meal") => void;
+  showPlanCards: (
+    kind: "week" | "diet" | "day-workout" | "day-meal" | "progress"
+  ) => void;
+  clearUiRequest: () => void;
+  logMeasure: (kind: "waist" | "chest" | "arm" | "thigh", value: number) => void;
   resetAll: () => void;
   signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
@@ -158,6 +163,7 @@ const initial: AppState = {
   intakeQueue: [],
   intakeIndex: 0,
   awaitingFeedbackId: null,
+  uiRequest: null,
 };
 
 function missedYesterday(
@@ -606,6 +612,27 @@ export const useAppStore = create<AppState & Actions>()(
                 }, 2800);
               }
             }
+          } else if (a.type === "show_card") {
+            // mesmo caminho seja balão ou texto — a IA identifica a intenção
+            // e o card é IDÊNTICO ao que o balão dedicado geraria
+            const { profile: prof, plan: pl, sessions: sess, mealLogs: meals, metrics: mets } =
+              get();
+            if (prof && pl) {
+              rich =
+                a.kind === "week_workout"
+                  ? buildWeekPlanCard(prof, pl)
+                  : a.kind === "week_diet"
+                    ? buildDietCard(prof, pl)
+                    : a.kind === "day_workout"
+                      ? buildDayWorkoutCard(prof, pl, sess)
+                      : a.kind === "day_meal"
+                        ? buildDayMealCard(prof, pl, meals)
+                        : buildProgressCard(sess, meals, mets);
+            }
+          } else if (a.type === "open_weight_log") {
+            set({ uiRequest: "open_weight_sheet" });
+          } else if (a.type === "open_measure_log") {
+            set({ uiRequest: "open_measure_sheet" });
           } else if (a.type === "log_skip") {
             // skip só narrativa por enquanto
           }
@@ -1333,6 +1360,18 @@ export const useAppStore = create<AppState & Actions>()(
           set((st) => ({ metrics: [...st.metrics, m] }));
         },
 
+        logMeasure: (kind, value) => {
+          const m: BodyMetric = {
+            id: uid(),
+            kind,
+            value,
+            measuredAt: new Date().toISOString(),
+          };
+          set((st) => ({ metrics: [...st.metrics, m] }));
+        },
+
+        clearUiRequest: () => set({ uiRequest: null }),
+
         approvePlan: () => {
           const { plan, profile } = get();
           if (!plan || !profile) return;
@@ -1369,23 +1408,27 @@ export const useAppStore = create<AppState & Actions>()(
         },
 
         showPlanCards: (kind) => {
-          const { plan, profile, sessions, mealLogs } = get();
-          if (!plan || !profile) return;
+          const { plan, profile, sessions, mealLogs, metrics } = get();
+          if (!profile) return;
+          if (kind !== "progress" && !plan) return;
           const labels = {
             week: "Treino semana",
             diet: "Dieta semana",
             "day-workout": "Treino hoje",
             "day-meal": "Dieta hoje",
+            progress: "Como estou?",
           };
           get().addMessage({ role: "user", content: labels[kind] });
           const card =
-            kind === "week"
-              ? buildWeekPlanCard(profile, plan)
-              : kind === "diet"
-                ? buildDietCard(profile, plan)
-                : kind === "day-workout"
-                  ? buildDayWorkoutCard(profile, plan, sessions)
-                  : buildDayMealCard(profile, plan, mealLogs);
+            kind === "progress"
+              ? buildProgressCard(sessions, mealLogs, metrics)
+              : kind === "week"
+                ? buildWeekPlanCard(profile, plan!)
+                : kind === "diet"
+                  ? buildDietCard(profile, plan!)
+                  : kind === "day-workout"
+                    ? buildDayWorkoutCard(profile, plan!, sessions)
+                    : buildDayMealCard(profile, plan!, mealLogs);
           reply("", card, 350);
         },
 

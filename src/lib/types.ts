@@ -149,7 +149,8 @@ export type RichCardType =
   | "tech_read"
   | "approve_plan"
   | "day_workout"
-  | "day_meal";
+  | "day_meal"
+  | "progress";
 
 export interface RichCard {
   type: RichCardType;
@@ -239,4 +240,10 @@ export interface AppState {
   intakeIndex: number;
   /** sessão aguardando feedback pós-treino ("e aí, deu bom?") */
   awaitingFeedbackId: string | null;
+  /**
+   * Ponte store→UI: a IA (tool) pede pra abrir um sheet client-side
+   * (peso/medida) que ela não controla diretamente. O componente observa
+   * e limpa depois de atender.
+   */
+  uiRequest: "open_weight_sheet" | "open_measure_sheet" | null;
 }

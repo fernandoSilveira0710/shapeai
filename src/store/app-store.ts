@@ -36,6 +36,8 @@ import { getExercise } from "@/data/exercises";
 import { computePendings } from "@/lib/pendings";
 import { requestReminderPermission } from "@/lib/reminders";
 import {
+  buildDayMealCard,
+  buildDayWorkoutCard,
   buildDietCard,
   buildTechReadCard,
   buildWeekPlanCard,
@@ -128,7 +130,7 @@ type Actions = {
   ) => void;
   logWeight: (kg: number) => void;
   approvePlan: () => void;
-  showPlanCards: (kind: "week" | "diet") => void;
+  showPlanCards: (kind: "week" | "diet" | "day-workout" | "day-meal") => void;
   resetAll: () => void;
   signOut: () => Promise<void>;
   updateTone: (tone: UserProfile["tone"]) => void;
@@ -207,7 +209,14 @@ export const useAppStore = create<AppState & Actions>()(
         for (const a of actions) {
           if (a.type === "open_workout") {
             const id = get().startWorkout();
-            if (id) navigateToWorkout = id;
+            if (id) {
+              navigateToWorkout = id;
+            } else {
+              // tool falhou (descanso/já feito) mas o texto da LLM já foi escrito
+              // otimista — o card real desmente visualmente, rede de segurança
+              const { profile: prof, plan: pl, sessions: sess } = get();
+              if (prof && pl) rich = buildDayWorkoutCard(prof, pl, sess);
+            }
           } else if (a.type === "log_weight") {
             get().logWeight(a.kg);
           } else if (a.type === "log_meal") {
@@ -685,19 +694,11 @@ export const useAppStore = create<AppState & Actions>()(
             const content = coachReply(tone, "", "generic");
             const fallbackRich: RichCard | undefined =
               rich ||
-              (s.plan && !planDayForDate(s.plan)?.isRest
-                ? {
-                    type: "workout",
-                    title: `Hoje: ${planDayForDate(s.plan)?.label}`,
-                    body: "Se for treino, é só mandar bora.",
-                    cta: "Iniciar treino",
-                  }
-                : {
-                    type: "meal_check",
-                    title: "Check-in de refeição",
-                    body: "Já comeu? Me conta o prato.",
-                    cta: "Já comi",
-                  });
+              (s.plan && s.profile
+                ? !planDayForDate(s.plan)?.isRest
+                  ? buildDayWorkoutCard(s.profile, s.plan, s.sessions)
+                  : buildDayMealCard(s.profile, s.plan, s.mealLogs)
+                : undefined);
             get().patchMessage(assistantId, { content, rich: fallbackRich });
           }
         }
@@ -886,12 +887,11 @@ export const useAppStore = create<AppState & Actions>()(
           // se abertura é puxada de feedback, não empilha card de treino junto
           if (!feedbackPending && day && !day.isRest && !workoutDoneToday) {
             cards.push(
-              msg("assistant", "Quando quiser, a gente começa:", {
-                type: "workout",
-                title: `Hoje: ${day.label}`,
-                body: `${day.exercises.length} exercícios · ~${day.durationMin} min`,
-                cta: "Iniciar treino",
-              })
+              msg(
+                "assistant",
+                "Quando quiser, a gente começa:",
+                buildDayWorkoutCard(s.profile, s.plan, s.sessions)
+              )
             );
           }
 
@@ -1082,13 +1082,28 @@ export const useAppStore = create<AppState & Actions>()(
                   trimmed,
                   "generic",
                   `Treino de hoje (${doneToday.label}) já foi — músculo cresce no DESCANSO. Amanhã ${nextTime} a gente repete a dose. Se treinou outra coisa por fora, me conta que eu registro.`
-                )
+                ),
+                s0.plan ? buildDayWorkoutCard(s0.profile!, s0.plan, s0.sessions) : undefined
               );
               return {};
             }
             const id = get().startWorkout();
-            reply(coachReply(tone, trimmed, "start_workout"), undefined, 280);
-            return { navigateToWorkout: id ?? undefined };
+            if (id) {
+              reply(coachReply(tone, trimmed, "start_workout"), undefined, 280);
+              return { navigateToWorkout: id };
+            }
+            // não abriu e não é "já treinou" → só pode ser dia de descanso (ou sem plano).
+            // NUNCA fingir que vai treinar quando não vai — mostra o card real do dia.
+            reply(
+              coachReply(
+                tone,
+                trimmed,
+                "generic",
+                "Hoje é descanso no teu plano — treino de verdade só amanhã. Se quiser mesmo assim fazer algo leve por conta, ou treinou por fora, me fala que eu registro."
+              ),
+              s0.plan ? buildDayWorkoutCard(s0.profile!, s0.plan, s0.sessions) : undefined
+            );
+            return {};
           }
 
           // 3) paywall vision menção
@@ -1354,17 +1369,24 @@ export const useAppStore = create<AppState & Actions>()(
         },
 
         showPlanCards: (kind) => {
-          const { plan, profile } = get();
+          const { plan, profile, sessions, mealLogs } = get();
           if (!plan || !profile) return;
-          get().addMessage({
-            role: "user",
-            content: kind === "week" ? "Ver treino" : "Ver dieta",
-          });
-          reply(
-            "",
-            kind === "week" ? buildWeekPlanCard(profile, plan) : buildDietCard(profile, plan),
-            350
-          );
+          const labels = {
+            week: "Treino semana",
+            diet: "Dieta semana",
+            "day-workout": "Treino hoje",
+            "day-meal": "Dieta hoje",
+          };
+          get().addMessage({ role: "user", content: labels[kind] });
+          const card =
+            kind === "week"
+              ? buildWeekPlanCard(profile, plan)
+              : kind === "diet"
+                ? buildDietCard(profile, plan)
+                : kind === "day-workout"
+                  ? buildDayWorkoutCard(profile, plan, sessions)
+                  : buildDayMealCard(profile, plan, mealLogs);
+          reply("", card, 350);
         },
 
         updateTone: (tone) => {

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   Camera,
+  CheckCircle2,
   ChevronRight,
   Dumbbell,
   LogOut,
+  Moon,
   Send,
   Sparkles,
   UtensilsCrossed,
@@ -25,6 +27,8 @@ import { cn, dayKey, nowParts, vibrate } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import type { ChatMessage, RichCard } from "@/lib/types";
 import type {
+  DayMealPayload,
+  DayWorkoutPayload,
   DietPlanPayload,
   TechReadPayload,
   WeekPlanPayload,
@@ -122,6 +126,7 @@ export default function ChatPage() {
   const startWorkout = useAppStore((s) => s.startWorkout);
   const addMessage = useAppStore((s) => s.addMessage);
   const logWeight = useAppStore((s) => s.logWeight);
+  const logMeal = useAppStore((s) => s.logMeal);
   const signOut = useAppStore((s) => s.signOut);
   const approvePlan = useAppStore((s) => s.approvePlan);
   const showPlanCards = useAppStore((s) => s.showPlanCards);
@@ -180,25 +185,37 @@ export default function ChatPage() {
     }
   }
 
-  function handleCardCta(type: string) {
-    if (type === "workout") {
-      const id = startWorkout();
-      if (id) {
-        addMessage({ role: "user", content: "bora" });
-        addMessage({
-          role: "assistant",
-          content: "Treino aberto. Bora série por série.",
-        });
-        vibrate(15);
-        router.push(`/workout/${id}`);
-      } else if (workoutDoneToday) {
-        addMessage({
-          role: "assistant",
-          content:
-            "Hoje já foi, campeão — músculo cresce no descanso. Amanhã a gente repete a dose. Treinou algo por fora? Me conta que eu registro.",
-        });
-      }
+  /** Inicia o treino de verdade — usado pelo card genérico e pelo day_workout */
+  function tryStartWorkout() {
+    const id = startWorkout();
+    if (id) {
+      addMessage({ role: "user", content: "bora" });
+      addMessage({
+        role: "assistant",
+        content: "Treino aberto. Bora série por série.",
+      });
+      vibrate(15);
+      router.push(`/workout/${id}`);
+      return;
     }
+    // não abriu: ou já treinou hoje, ou é dia de descanso — nunca fica em silêncio
+    if (workoutDoneToday) {
+      addMessage({
+        role: "assistant",
+        content:
+          "Hoje já foi, campeão — músculo cresce no descanso. Amanhã a gente repete a dose. Treinou algo por fora? Me conta que eu registro.",
+      });
+    } else {
+      addMessage({
+        role: "assistant",
+        content:
+          "Hoje é descanso no teu plano — treino de verdade só amanhã. Treinou por fora? Me fala que eu registro.",
+      });
+    }
+  }
+
+  function handleCardCta(type: string) {
+    if (type === "workout") tryStartWorkout();
     if (type === "meal_check") handleSend("já comi");
     if (type === "paywall") router.push("/me");
   }
@@ -294,11 +311,13 @@ export default function ChatPage() {
       ? ["Pode perguntar", "Quero ajustar"]
       : ([
           day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
+          "Treino hoje",
+          "Dieta hoje",
           "Já almocei",
           "Registrar peso",
           "Como estou?",
-          "Ver treino",
-          "Ver dieta",
+          "Treino semana",
+          "Dieta semana",
         ].filter(Boolean) as string[]);
 
   return (
@@ -448,6 +467,22 @@ export default function ChatPage() {
                         />
                       ) : m.rich.type === "tech_read" ? (
                         <TechReadCard card={m.rich} />
+                      ) : m.rich.type === "day_workout" ? (
+                        <DayWorkoutCard card={m.rich} onStart={tryStartWorkout} />
+                      ) : m.rich.type === "day_meal" ? (
+                        <DayMealCard
+                          card={m.rich}
+                          onLogOption={(slot, option) => {
+                            vibrate(10);
+                            logMeal(slot, option, "on_plan", "chip");
+                            addMessage({ role: "user", content: `Já comi: ${option}` });
+                            addMessage({
+                              role: "assistant",
+                              content: "Fechou. Anotado.",
+                            });
+                          }}
+                          onLogOther={() => askInComposer("Já comi, mas foi: ")}
+                        />
                       ) : m.rich.type === "approve_plan" ? (
                         <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-brand/40 bg-brand/5 p-3.5 animate-rise">
                           <div className="text-sm font-semibold mb-3">
@@ -548,12 +583,20 @@ export default function ChatPage() {
                   setWeightSheet(true);
                   return;
                 }
-                if (c === "Ver treino") {
+                if (c === "Treino semana") {
                   showPlanCards("week");
                   return;
                 }
-                if (c === "Ver dieta") {
+                if (c === "Dieta semana") {
                   showPlanCards("diet");
+                  return;
+                }
+                if (c === "Treino hoje") {
+                  showPlanCards("day-workout");
+                  return;
+                }
+                if (c === "Dieta hoje") {
+                  showPlanCards("day-meal");
                   return;
                 }
                 handleSend(c === "Bora treinar" ? "bora" : c);
@@ -964,6 +1007,129 @@ function TechReadCard({ card }: { card: RichCard }) {
         <p className="text-[11px] text-muted mt-2.5">
           IMC: {p.imcLabel} · TDEE ~{p.tdee} kcal · {p.goalNote}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* ——— Cards de HOJE (distintos dos cards de semana) ——— */
+
+function DayWorkoutCard({
+  card,
+  onStart,
+}: {
+  card: RichCard;
+  onStart: () => void;
+}) {
+  const p = card.payload as DayWorkoutPayload;
+  if (!p) return null;
+
+  if (p.status === "rest") {
+    return (
+      <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-surface border-b border-border">
+          <Moon className="size-4 text-muted" />
+          <span className="text-sm font-semibold">{card.title}</span>
+        </div>
+        <div className="p-3.5">
+          <p className="text-sm text-muted">
+            Descanso — corpo recupera pro próximo treino. Se treinou algo por
+            fora, é só me contar que eu registro.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (p.status === "done") {
+    const d = p.doneSummary;
+    return (
+      <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-brand/30 bg-elevated overflow-hidden animate-rise">
+        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+          <CheckCircle2 className="size-4 text-brand" />
+          <span className="text-sm font-semibold">{card.title} · {p.label}</span>
+        </div>
+        <div className="p-3.5">
+          <p className="text-sm text-muted">
+            Concluído ✅ {d ? `${d.sets} séries` : ""}
+            {d && d.volumeKg > 0 ? ` · ${(d.volumeKg / 1000).toFixed(1)}k kg volume` : ""}
+            {d && d.minutes > 0 ? ` · ${d.minutes}min` : ""}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // pending: treino do dia ainda não feito
+  return (
+    <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <Dumbbell className="size-4 text-brand" />
+        <span className="flex-1 text-sm font-semibold">{card.title} · {p.label}</span>
+        <span className="text-[10px] text-muted">
+          {p.time ? `${p.time} · ` : ""}~{p.durationMin}min
+        </span>
+      </div>
+      <div className="p-2">
+        {p.exercises.map((e) => (
+          <div
+            key={e.exerciseId}
+            className="flex items-center gap-2.5 rounded-xl px-2 py-1.5"
+          >
+            <span className="flex-1 min-w-0 text-sm truncate">{e.name}</span>
+            <span className="text-[11px] text-muted shrink-0">
+              {e.sets}×{e.reps}
+            </span>
+          </div>
+        ))}
+        <Button size="sm" className="w-full mt-2" onClick={onStart}>
+          Iniciar treino
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DayMealCard({
+  card,
+  onLogOption,
+  onLogOther,
+}: {
+  card: RichCard;
+  onLogOption: (slot: string, option: string) => void;
+  onLogOther: () => void;
+}) {
+  const p = card.payload as DayMealPayload;
+  if (!p) return null;
+  return (
+    <div className="mt-1.5 w-full min-w-[240px] rounded-2xl border border-border bg-elevated overflow-hidden animate-rise">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-brand/10 border-b border-brand/20">
+        <UtensilsCrossed className="size-4 text-brand" />
+        <span className="text-sm font-semibold">{card.title}</span>
+      </div>
+      <div className="p-2.5 space-y-1.5">
+        {p.loggedAlready && (
+          <p className="text-[11px] text-brand px-1 pb-0.5">
+            ✓ já registrado hoje — pode logar de novo se comeu outra coisa
+          </p>
+        )}
+        {p.options.map((op) => (
+          <button
+            key={op}
+            type="button"
+            onClick={() => onLogOption(p.slot, op)}
+            className="w-full flex items-center gap-2.5 rounded-xl bg-surface border border-border px-3 py-2.5 text-left text-sm transition hover:border-brand/40 active:scale-[0.99]"
+          >
+            {op}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={onLogOther}
+          className="w-full text-center text-xs text-muted py-1.5"
+        >
+          Comi outra coisa — escrever
+        </button>
       </div>
     </div>
   );

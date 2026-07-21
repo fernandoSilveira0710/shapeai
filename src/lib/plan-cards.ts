@@ -1,5 +1,7 @@
-import type { Plan, RichCard, UserProfile } from "@/lib/types";
+import type { MealLog, Plan, RichCard, UserProfile, WorkoutSession } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
+import { getExercise } from "@/data/exercises";
+import { dayKey, weekdayOfKey } from "@/lib/utils";
 
 export type WeekPlanPayload = {
   rows: {
@@ -84,6 +86,138 @@ export function buildDietCard(profile: UserProfile, plan: Plan): RichCard {
   return {
     type: "diet_plan",
     title: `Base alimentar · ~${n.kcal} kcal/dia`,
+    payload,
+  };
+}
+
+export type DayWorkoutPayload = {
+  status: "rest" | "done" | "pending";
+  weekday: number;
+  dayLabel: string;
+  label: string;
+  time?: string;
+  durationMin: number;
+  exercises: { exerciseId: string; name: string; sets: number; reps: string }[];
+  doneSummary?: { sets: number; volumeKg: number; minutes: number };
+};
+
+/** Card acionável do TREINO DE HOJE — distinto do resumo da semana. */
+export function buildDayWorkoutCard(
+  profile: UserProfile,
+  plan: Plan,
+  sessions: WorkoutSession[]
+): RichCard {
+  const today = dayKey(0);
+  const wd = weekdayOfKey(today);
+  const day = plan.workoutDays.find((d) => d.weekday === wd);
+  const dayLabel = WEEKDAY_LABELS[wd];
+
+  if (!day || day.isRest) {
+    const payload: DayWorkoutPayload = {
+      status: "rest",
+      weekday: wd,
+      dayLabel,
+      label: "Descanso",
+      durationMin: 0,
+      exercises: [],
+    };
+    return { type: "day_workout", title: `Hoje · ${dayLabel}`, payload };
+  }
+
+  const doneSession = sessions.find(
+    (s) => s.date === today && (s.status === "completed" || s.status === "partial")
+  );
+  if (doneSession) {
+    const doneSets = doneSession.sets.filter((x) => x.status === "completed");
+    const volumeKg = doneSets.reduce((acc, x) => acc + x.reps * x.weightKg, 0);
+    const minutes = doneSession.endedAt
+      ? Math.round(
+          (new Date(doneSession.endedAt).getTime() -
+            new Date(doneSession.startedAt).getTime()) /
+            60000
+        )
+      : 0;
+    const payload: DayWorkoutPayload = {
+      status: "done",
+      weekday: wd,
+      dayLabel,
+      label: day.label,
+      time: profile.trainTime,
+      durationMin: day.durationMin,
+      exercises: [],
+      doneSummary: { sets: doneSets.length, volumeKg, minutes },
+    };
+    return { type: "day_workout", title: `Hoje · ${dayLabel}`, payload };
+  }
+
+  const payload: DayWorkoutPayload = {
+    status: "pending",
+    weekday: wd,
+    dayLabel,
+    label: day.label,
+    time: profile.trainTime,
+    durationMin: day.durationMin,
+    exercises: day.exercises.map((e) => ({
+      exerciseId: e.exerciseId,
+      name: getExercise(e.exerciseId)?.namePt ?? e.exerciseId,
+      sets: e.sets,
+      reps: e.reps,
+    })),
+  };
+  return { type: "day_workout", title: `Hoje · ${dayLabel}`, payload };
+}
+
+export type DayMealPayload = {
+  slot: string;
+  slotLabel: string;
+  options: string[];
+  loggedAlready: boolean;
+};
+
+const SLOT_LABELS: Record<string, string> = {
+  cafe: "Café da manhã",
+  almoco: "Almoço",
+  lanche: "Lanche",
+  janta: "Janta",
+};
+
+/** Slot de refeição relevante AGORA, pela hora do dia */
+function currentMealSlot(hour: number): string {
+  if (hour < 10) return "cafe";
+  if (hour < 15) return "almoco";
+  if (hour < 19) return "lanche";
+  return "janta";
+}
+
+/** Card acionável da REFEIÇÃO DE AGORA — distinto do resumo semanal da dieta. */
+export function buildDayMealCard(
+  profile: UserProfile,
+  plan: Plan,
+  mealLogs: MealLog[]
+): RichCard {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      hour12: false,
+    }).format(new Date())
+  );
+  const slot = currentMealSlot(hour);
+  const meal = plan.nutrition.meals.find((m) => m.slot === slot);
+  const today = dayKey(0);
+  const loggedAlready = mealLogs.some(
+    (l) => l.slot === slot && l.loggedAt.startsWith(today)
+  );
+
+  const payload: DayMealPayload = {
+    slot,
+    slotLabel: meal?.title ?? SLOT_LABELS[slot] ?? slot,
+    options: meal?.items ?? [],
+    loggedAlready,
+  };
+  return {
+    type: "day_meal",
+    title: `Hoje · ${payload.slotLabel}`,
     payload,
   };
 }

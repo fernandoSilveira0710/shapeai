@@ -147,7 +147,9 @@ export type RichCardType =
   | "week_plan"
   | "diet_plan"
   | "tech_read"
-  | "approve_plan";
+  | "approve_plan"
+  | "day_workout"
+  | "day_meal";
 
 export interface RichCard {
   type: RichCardType;

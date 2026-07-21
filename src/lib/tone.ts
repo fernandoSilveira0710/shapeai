@@ -267,7 +267,10 @@ export function coachReply(
         `Vision = Pro. Descreve o prato por texto.`
       );
     default:
-      if (/bora|vamos|treino|começar|iniciar/.test(t)) {
+      // auto-detecta intenção pelo texto SÓ quando o caller não decidiu nada
+      // (sem extra) — com extra, o caller já sabe a resposta certa (ex: dia
+      // de descanso) e ela nunca pode ser descartada por bater "bora" no regex.
+      if (!extra && /bora|vamos|treino|começar|iniciar/.test(t)) {
         return coachReply(tone, userText, "start_workout");
       }
       return say(

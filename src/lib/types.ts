@@ -104,6 +104,26 @@ export interface NutritionPlan {
   notes: string;
 }
 
+/**
+ * Trilha de mudanças do plano — forward-compatible com o painel do
+ * personal (fase 3): quando o painel existir, ele lê isso direto.
+ * Hoje é só log local (sincroniza via Supabase snapshot junto do resto).
+ */
+export interface PlanChangeLogEntry {
+  at: string;
+  /** o que o usuário pediu, em 1 linha */
+  trigger: string;
+  /** o que de fato mudou no plano */
+  summary: string;
+  tool:
+    | "swap_food"
+    | "swap_exercise"
+    | "swap_workout_day"
+    | "add_exercise"
+    | "remove_exercise"
+    | "redesign_plan";
+}
+
 export interface Plan {
   id: string;
   version: number;
@@ -113,6 +133,7 @@ export interface Plan {
   source: "ai" | "user" | "coach";
   /** usuário bateu o martelo nessa versão */
   approvedAt?: string;
+  changeLog?: PlanChangeLogEntry[];
 }
 
 export type MessageRole = "user" | "assistant" | "system";

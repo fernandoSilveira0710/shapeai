@@ -15,7 +15,15 @@ export type ChatAction =
   | { type: "swap_food"; from: string; to: string }
   | { type: "swap_workout_day"; withWeekday: number }
   | { type: "log_past_workout"; date: string; note?: string }
-  | { type: "swap_exercise"; weekday: number; fromExerciseId: string; toExerciseId: string };
+  | { type: "swap_exercise"; weekday: number; fromExerciseId: string; toExerciseId: string }
+  | {
+      type: "add_exercise";
+      weekday: number;
+      exerciseId: string;
+      sets?: number;
+      reps?: string;
+    }
+  | { type: "remove_exercise"; weekday: number; exerciseId: string };
 
 /**
  * Chat streaming + tools.
@@ -124,13 +132,39 @@ export async function POST(req: NextRequest) {
         }),
         redesign_plan: tool({
           description:
-            "Pede redesign do plano (treino/dieta) com instrução do usuário (orçamento, lesão, dia, etc.).",
+            "Redesign LIMITADO — só entende 4 padrões: orçamento apertado, trocar agachamento (dor/preferência joelho), mover treino de sexta, trocar a janta. NÃO serve pra adicionar/remover/contar exercícios (use add_exercise/remove_exercise) nem pra trocar um exercício específico (use swap_exercise). Se a instrução não bater em nenhum dos 4 padrões, NADA muda — o app avisa o usuário, não invente que funcionou.",
           inputSchema: z.object({
             instruction: z.string(),
           }),
           execute: async ({ instruction }) => {
             actions.push({ type: "redesign_plan", instruction });
             return { ok: true, instruction };
+          },
+        }),
+        add_exercise: tool({
+          description:
+            "Adiciona um exercício a um dia de treino (mais volume pra um grupo muscular). Use quando o usuário pedir mais exercícios de um grupo (ex: 'quero mais bíceps'). exerciseId DEVE ser um id exato do catálogo do contexto. Chame uma vez por exercício — pra adicionar 2, chame 2x.",
+          inputSchema: z.object({
+            weekday: z.number().min(0).max(6),
+            exerciseId: z.string().describe("id exato do catálogo"),
+            sets: z.number().min(1).max(6).optional(),
+            reps: z.string().optional().describe("ex: '8-12'"),
+          }),
+          execute: async ({ weekday, exerciseId, sets, reps }) => {
+            actions.push({ type: "add_exercise", weekday, exerciseId, sets, reps });
+            return { ok: true, message: "Exercício adicionado ao dia." };
+          },
+        }),
+        remove_exercise: tool({
+          description:
+            "Remove um exercício de um dia de treino (menos volume, ou o usuário não quer mais aquele movimento sem substituto).",
+          inputSchema: z.object({
+            weekday: z.number().min(0).max(6),
+            exerciseId: z.string(),
+          }),
+          execute: async ({ weekday, exerciseId }) => {
+            actions.push({ type: "remove_exercise", weekday, exerciseId });
+            return { ok: true, message: "Exercício removido do dia." };
           },
         }),
         log_skip: tool({

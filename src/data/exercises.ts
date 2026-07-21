@@ -228,13 +228,15 @@ export function exercisesForEquipment(
   equipment: string[],
   muscle: string
 ): Exercise[] {
-  const prefer = equipment.includes("academia")
-    ? "academia"
-    : equipment.includes("halteres")
-      ? "halteres"
-      : "peso_corporal";
-
   const pool = EXERCISES.filter((e) => e.muscleGroup === muscle);
-  const preferred = pool.filter((e) => e.equipment === prefer || e.equipment === "peso_corporal");
-  return preferred.length ? preferred : pool;
+
+  // academia completa tem halteres também — não trava o catálogo em 1 opção
+  // quando o grupo (bíceps/tríceps) só tem 1 exercício "academia" puro.
+  const available = equipment.includes("academia")
+    ? pool
+    : equipment.includes("halteres") || equipment.includes("casa")
+      ? pool.filter((e) => e.equipment === "halteres" || e.equipment === "peso_corporal")
+      : pool.filter((e) => e.equipment === "peso_corporal");
+
+  return available.length ? available : pool;
 }

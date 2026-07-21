@@ -1,7 +1,7 @@
 import type { AppState, ChatMessage } from "@/lib/types";
-import { planDayForDate } from "@/lib/plan-generator";
+import { planDayForDate, WEEKDAY_LABELS } from "@/lib/plan-generator";
 import { pendingsForContext } from "@/lib/pendings";
-import { EXERCISES } from "@/data/exercises";
+import { EXERCISES, getExercise } from "@/data/exercises";
 import { nowParts, todayKey } from "@/lib/utils";
 
 export type ContextPackInput = Pick<
@@ -59,7 +59,30 @@ export function buildContextPack(s: ContextPackInput): string {
           .join("\n")}`
       : "",
     s.plan
-      ? `Catálogo de exercícios disponível (id: nome — grupo/equipamento). Ao trocar exercício com swap_exercise, toExerciseId TEM que ser um id exato desta lista:\n${EXERCISES.map((e) => `${e.id}: ${e.namePt} — ${e.muscleGroup}/${e.equipment}`).join("\n")}`
+      ? `Treino da semana, dia a dia — USE ISSO antes de add/remove/swap_exercise pra saber o que já existe em cada dia (weekday: label — exercícios):\n${s.plan.workoutDays
+          .filter((d) => !d.isRest)
+          .map(
+            (d) =>
+              `${d.weekday} (${WEEKDAY_LABELS[d.weekday]}): ${d.label} — ${d.exercises
+                .map((e) => `${e.exerciseId} [${getExercise(e.exerciseId)?.muscleGroup}]`)
+                .join(", ")}`
+          )
+          .join("\n")}`
+      : "",
+    s.plan
+      ? `Volume semanal por grupo muscular (nº de exercícios somando todos os dias — pra saber onde falta volume):\n${(() => {
+          const count = new Map<string, number>();
+          for (const d of s.plan.workoutDays) {
+            for (const e of d.exercises) {
+              const mg = getExercise(e.exerciseId)?.muscleGroup;
+              if (mg) count.set(mg, (count.get(mg) ?? 0) + 1);
+            }
+          }
+          return [...count.entries()].map(([mg, n]) => `${mg}: ${n}`).join(" · ");
+        })()}`
+      : "",
+    s.plan
+      ? `Catálogo de exercícios disponível (id: nome — grupo/equipamento). Ao usar add_exercise/swap_exercise, o id TEM que ser exato desta lista:\n${EXERCISES.map((e) => `${e.id}: ${e.namePt} — ${e.muscleGroup}/${e.equipment}`).join("\n")}`
       : "",
     s.plan
       ? `Refeições modelo: ${s.plan.nutrition.meals.map((m) => `${m.title}: ${m.items[0]}`).join(" | ")}`

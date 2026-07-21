@@ -10,6 +10,18 @@ import type {
   UserProfile,
 } from "@/lib/types";
 
+const LOW_VOLUME_MUSCLES = new Set(["core", "panturrilha", "gluteo"]);
+
+/**
+ * Exercícios/dia por grupo: foco primário do dia (1º da lista) leva mais
+ * volume que os secundários — academia de verdade dá 2-4 exercícios por
+ * grupo grande, não 1. Isolador pequeno (core/panturrilha/gluteo) fica em 1.
+ */
+function targetCountFor(muscle: string, isPrimary: boolean): number {
+  if (LOW_VOLUME_MUSCLES.has(muscle)) return 1;
+  return isPrimary ? 3 : 2;
+}
+
 function pickExercises(
   muscles: string[],
   equipment: Equipment[],
@@ -18,23 +30,36 @@ function pickExercises(
   const sets = experience === "iniciante" ? 3 : experience === "avancado" ? 4 : 3;
   const reps =
     experience === "iniciante" ? "10-12" : experience === "avancado" ? "6-10" : "8-12";
+  const dayCap = experience === "iniciante" ? 6 : experience === "avancado" ? 8 : 7;
 
   const result: PlanExercise[] = [];
-  for (const m of muscles) {
+  muscles.forEach((m, i) => {
+    if (result.length >= dayCap) return;
     const list = exercisesForEquipment(equipment, m);
-    if (!list.length) continue;
-    const ex = list[result.length % list.length];
-    result.push({
-      exerciseId: ex.id,
-      sets: m === "core" ? 3 : sets,
-      reps: m === "core" ? "30-45s" : reps,
-      restSec: ex.defaultRestSec,
-      suggestedWeightKg:
-        experience === "iniciante" ? undefined : m === "pernas" || m === "peito" ? 40 : 12,
-    });
-  }
+    if (!list.length) return;
+    const isPrimary = i === 0;
+    const count = Math.min(
+      targetCountFor(m, isPrimary),
+      list.length,
+      dayCap - result.length
+    );
+    for (let k = 0; k < count; k++) {
+      const ex = list[k];
+      result.push({
+        exerciseId: ex.id,
+        sets: m === "core" ? 3 : sets,
+        reps: m === "core" ? "30-45s" : reps,
+        restSec: ex.defaultRestSec,
+        suggestedWeightKg:
+          experience === "iniciante" ? undefined : m === "pernas" || m === "peito" ? 40 : 12,
+      });
+    }
+  });
   // always add core if missing
-  if (!result.some((r) => getExercise(r.exerciseId)?.muscleGroup === "core")) {
+  if (
+    result.length < dayCap &&
+    !result.some((r) => getExercise(r.exerciseId)?.muscleGroup === "core")
+  ) {
     const core = exercisesForEquipment(equipment, "core")[0];
     if (core) {
       result.push({
@@ -45,7 +70,7 @@ function pickExercises(
       });
     }
   }
-  return result.slice(0, 6);
+  return result.slice(0, dayCap);
 }
 
 const SPLITS: Record<string, { label: string; muscles: string[] }[]> = {
@@ -293,24 +318,33 @@ export function generatePlan(profile: UserProfile): Plan {
   };
 }
 
-/** Redesign simples por instrução do usuário */
-export function patchPlan(plan: Plan, instruction: string, profile: UserProfile): Plan {
+export type PatchResult = { plan: Plan; changed: boolean; summary: string };
+
+/**
+ * Redesign por regex — cobre só 4 casos conhecidos (orçamento, joelho/
+ * agachamento, mover sexta, trocar jantar). Fora disso `changed=false`:
+ * o caller NÃO deve narrar mudança nenhuma pro usuário — pedidos de
+ * exercício específico (adicionar/trocar/remover) usam as tools
+ * dedicadas (add_exercise/remove_exercise/swap_exercise), não isto aqui.
+ */
+export function patchPlan(plan: Plan, instruction: string, profile: UserProfile): PatchResult {
   const lower = instruction.toLowerCase();
   const next = structuredClone(plan);
-  next.version += 1;
-  next.createdAt = new Date().toISOString();
-  next.source = "user";
+  const summaries: string[] = [];
 
   if (/ricota|whey|caro|pobre|barato|orçamento|apertado/.test(lower)) {
     next.nutrition = buildNutrition({ ...profile, budgetFood: "apertado" });
     next.nutrition.notes +=
       " Ajuste: priorizamos opções baratas e removemos itens caros que você citou.";
+    summaries.push("dieta recalculada pro orçamento apertado");
   }
 
   if (/sem agachamento|odeio agach|joelho/.test(lower)) {
+    let touched = false;
     for (const day of next.workoutDays) {
       day.exercises = day.exercises.map((ex) => {
         if (ex.exerciseId.includes("squat")) {
+          touched = true;
           return {
             ...ex,
             exerciseId: profile.equipment.includes("academia")
@@ -322,6 +356,7 @@ export function patchPlan(plan: Plan, instruction: string, profile: UserProfile)
         return ex;
       });
     }
+    if (touched) summaries.push("agachamento trocado por alternativa sem carga no joelho");
   }
 
   if (/sem sexta|n[aã]o posso .*sexta|n[aã]o (treino|vou) .*sexta|tira .*sexta/.test(lower)) {
@@ -341,6 +376,7 @@ export function patchPlan(plan: Plan, instruction: string, profile: UserProfile)
         friday.label = "Descanso";
         friday.exercises = [];
         friday.durationMin = 0;
+        summaries.push(`treino de sexta movido pra ${WEEKDAY_LABELS[target.weekday]}`);
       }
     }
   }
@@ -350,10 +386,17 @@ export function patchPlan(plan: Plan, instruction: string, profile: UserProfile)
     if (janta) {
       janta.items = ["Omelete com legumes + arroz ou batata", "Sopa de lentilha + pão"];
       janta.swaps = ["Cansado → sanduíche de frango + fruta"];
+      summaries.push("janta trocada por opções novas");
     }
   }
 
-  return next;
+  const changed = summaries.length > 0;
+  if (changed) {
+    next.version += 1;
+    next.createdAt = new Date().toISOString();
+    next.source = "user";
+  }
+  return { plan: changed ? next : plan, changed, summary: summaries.join("; ") };
 }
 
 export const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];

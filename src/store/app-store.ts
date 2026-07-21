@@ -2,13 +2,20 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { generatePlan, patchPlan, planDayForDate } from "@/lib/plan-generator";
+import {
+  generatePlan,
+  patchPlan,
+  planDayForDate,
+  WEEKDAY_LABELS,
+  type PatchResult,
+} from "@/lib/plan-generator";
 import type {
   AppState,
   BodyMetric,
   ChatMessage,
   MealLog,
   Plan,
+  PlanChangeLogEntry,
   RichCard,
   SubscriptionPlan,
   UserProfile,
@@ -44,6 +51,18 @@ function uid() {
 
 /** Ack curto no tom + próxima pergunta (intake) */
 /** Mensagem de liberação — plano aprovado, explica o que destrancou */
+/**
+ * Trilha de mudanças do plano — hoje só log local, amanhã é o que o
+ * painel do personal vai ler (fase 3). Barato: schema pronto, sem UI.
+ */
+function withChangeLog(
+  plan: Plan,
+  entry: Omit<PlanChangeLogEntry, "at">
+): Plan {
+  const log = [...(plan.changeLog ?? []), { ...entry, at: new Date().toISOString() }];
+  return { ...plan, changeLog: log.slice(-30) };
+}
+
 function unlockMessage(tone: UserProfile["tone"], name: string) {
   const n = name.split(" ")[0] || "campeão";
   switch (tone) {
@@ -91,7 +110,7 @@ type Actions = {
   setSubscription: (p: SubscriptionPlan) => void;
   completeOnboarding: (profile: UserProfile, plan: Plan) => void;
   updatePlan: (plan: Plan) => void;
-  redesignPlan: (instruction: string) => Plan | null;
+  redesignPlan: (instruction: string) => PatchResult | null;
   addMessage: (m: Omit<ChatMessage, "id" | "createdAt"> & { id?: string }) => void;
   patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
   sendUserMessage: (text: string) => Promise<{ navigateToWorkout?: string }>;
@@ -198,12 +217,18 @@ export const useAppStore = create<AppState & Actions>()(
               (a.adherence as MealLog["adherence"]) || "partial"
             );
           } else if (a.type === "redesign_plan") {
-            const next = get().redesignPlan(a.instruction);
-            if (next) {
+            const result = get().redesignPlan(a.instruction);
+            if (result?.changed) {
+              const withLog = withChangeLog(result.plan, {
+                trigger: a.instruction.slice(0, 200),
+                summary: result.summary,
+                tool: "redesign_plan",
+              });
+              set({ plan: withLog });
               rich = {
                 type: "plan_summary",
-                title: `Plano v${next.version}`,
-                body: `${next.nutrition.kcal} kcal · P${next.nutrition.proteinG}g`,
+                title: `Plano v${withLog.version}`,
+                body: `${withLog.nutrition.kcal} kcal · P${withLog.nutrition.proteinG}g`,
               };
               // quadro velho confunde — some; o novo entra com pedido de aprovação
               pruneOldPlanCards(["week_plan", "diet_plan", "approve_plan"]);
@@ -213,18 +238,116 @@ export const useAppStore = create<AppState & Actions>()(
                   get().addMessage({
                     role: "assistant",
                     content: "Semana remontada:",
-                    rich: buildWeekPlanCard(prof, next),
+                    rich: buildWeekPlanCard(prof, withLog),
                   });
                   get().addMessage({
                     role: "assistant",
                     content: "",
                     rich: {
                       type: "approve_plan",
-                      title: `Fechou assim? (plano v${next.version})`,
+                      title: `Fechou assim? (plano v${withLog.version})`,
                     },
                   });
                   void get().syncToCloud();
                 }, 800);
+              }
+            } else {
+              // patchPlan não reconheceu o pedido — NADA mudou, avisa em vez de fingir
+              setTimeout(() => {
+                get().addMessage({
+                  role: "assistant",
+                  content:
+                    "Não consegui aplicar esse ajuste automaticamente ainda. Me fala de novo, mais específico (ex.: qual exercício, qual dia) que eu resolvo na hora.",
+                });
+                void get().syncToCloud();
+              }, 500);
+            }
+          } else if (a.type === "add_exercise") {
+            const plan = get().plan;
+            const ex = plan ? getExercise(a.exerciseId) : undefined;
+            if (plan && ex) {
+              const days = plan.workoutDays.map((d) => ({ ...d }));
+              const day = days.find((d) => d.weekday === a.weekday);
+              const already = day?.exercises.some((e) => e.exerciseId === a.exerciseId);
+              if (day && !day.isRest && !already) {
+                day.exercises = [
+                  ...day.exercises,
+                  {
+                    exerciseId: a.exerciseId,
+                    sets: a.sets ?? 3,
+                    reps: a.reps ?? "8-12",
+                    restSec: ex.defaultRestSec,
+                  },
+                ];
+                const nextPlan = withChangeLog(
+                  { ...plan, workoutDays: days, version: plan.version + 1, source: "ai" as const, approvedAt: undefined },
+                  {
+                    trigger: `adicionar ${ex.namePt}`,
+                    summary: `${ex.namePt} adicionado no dia`,
+                    tool: "add_exercise",
+                  }
+                );
+                set({ plan: nextPlan });
+                pruneOldPlanCards(["week_plan", "approve_plan"]);
+                const prof = get().profile;
+                if (prof) {
+                  setTimeout(() => {
+                    get().addMessage({
+                      role: "assistant",
+                      content: "Treino ajustado — ficou assim:",
+                      rich: buildWeekPlanCard(prof, nextPlan),
+                    });
+                    get().addMessage({
+                      role: "assistant",
+                      content: "",
+                      rich: {
+                        type: "approve_plan",
+                        title: `Fechou assim? (plano v${nextPlan.version})`,
+                      },
+                    });
+                    void get().syncToCloud();
+                  }, 700);
+                }
+              }
+            }
+          } else if (a.type === "remove_exercise") {
+            const plan = get().plan;
+            if (plan) {
+              const days = plan.workoutDays.map((d) => ({ ...d }));
+              const day = days.find((d) => d.weekday === a.weekday);
+              const had = day?.exercises.some((e) => e.exerciseId === a.exerciseId);
+              if (day && had) {
+                const ex = getExercise(a.exerciseId);
+                day.exercises = day.exercises.filter((e) => e.exerciseId !== a.exerciseId);
+                const nextPlan = withChangeLog(
+                  { ...plan, workoutDays: days, version: plan.version + 1, source: "ai" as const, approvedAt: undefined },
+                  {
+                    trigger: `remover ${ex?.namePt ?? a.exerciseId}`,
+                    summary: `${ex?.namePt ?? a.exerciseId} removido do dia`,
+                    tool: "remove_exercise",
+                  }
+                );
+                set({ plan: nextPlan });
+                pruneOldPlanCards(["week_plan", "approve_plan"]);
+                const prof = get().profile;
+                if (prof) {
+                  setTimeout(() => {
+                    get().addMessage({
+                      role: "assistant",
+                      content: "Treino ajustado — ficou assim:",
+                      rich: buildWeekPlanCard(prof, nextPlan),
+                    });
+                    get().addMessage({
+                      role: "assistant",
+                      content: "",
+                      rich: {
+                        type: "approve_plan",
+                        title: `Fechou assim? (plano v${nextPlan.version})`,
+                      },
+                    });
+                    void get().syncToCloud();
+                  }, 700);
+                }
               }
             }
           } else if (a.type === "swap_workout_day") {
@@ -248,9 +371,15 @@ export const useAppStore = create<AppState & Actions>()(
                   isRest: b1.isRest,
                 });
                 Object.assign(b1, tmp);
-                set({
-                  plan: { ...plan, workoutDays: days, version: plan.version + 1 },
-                });
+                const nextPlan = withChangeLog(
+                  { ...plan, workoutDays: days, version: plan.version + 1 },
+                  {
+                    trigger: `trocar treino de hoje pelo de ${WEEKDAY_LABELS[a.withWeekday]}`,
+                    summary: `${WEEKDAY_LABELS[todayWd]} e ${WEEKDAY_LABELS[a.withWeekday]} trocaram de treino`,
+                    tool: "swap_workout_day",
+                  }
+                );
+                set({ plan: nextPlan });
               }
             }
           } else if (a.type === "swap_exercise") {
@@ -271,13 +400,20 @@ export const useAppStore = create<AppState & Actions>()(
                   restSec: toEx.defaultRestSec,
                   notes: "Substituído a pedido.",
                 };
-                const nextPlan: Plan = {
-                  ...plan,
-                  workoutDays: days,
-                  version: plan.version + 1,
-                  source: "ai",
-                  approvedAt: undefined,
-                };
+                const nextPlan = withChangeLog(
+                  {
+                    ...plan,
+                    workoutDays: days,
+                    version: plan.version + 1,
+                    source: "ai" as const,
+                    approvedAt: undefined,
+                  },
+                  {
+                    trigger: `trocar ${getExercise(a.fromExerciseId)?.namePt ?? a.fromExerciseId} por ${toEx.namePt}`,
+                    summary: `${toEx.namePt} entrou no lugar de ${getExercise(a.fromExerciseId)?.namePt ?? a.fromExerciseId}`,
+                    tool: "swap_exercise",
+                  }
+                );
                 set({ plan: nextPlan });
                 // re-mostra o quadro atualizado + pede aprovação de novo
                 pruneOldPlanCards(["week_plan", "approve_plan"]);
@@ -345,13 +481,20 @@ export const useAppStore = create<AppState & Actions>()(
               });
               if (touched) {
                 set({
-                  plan: {
-                    ...plan,
-                    nutrition: { ...plan.nutrition, meals },
-                    version: plan.version + 1,
-                    source: "ai",
-                    approvedAt: undefined,
-                  },
+                  plan: withChangeLog(
+                    {
+                      ...plan,
+                      nutrition: { ...plan.nutrition, meals },
+                      version: plan.version + 1,
+                      source: "ai",
+                      approvedAt: undefined,
+                    },
+                    {
+                      trigger: `trocar ${a.from} por ${a.to}`,
+                      summary: `${a.to} entrou no lugar de ${a.from} na dieta`,
+                      tool: "swap_food",
+                    }
+                  ),
                 });
                 // re-mostra o quadro atualizado + pede aprovação de novo
                 pruneOldPlanCards(["diet_plan", "approve_plan"]);
@@ -638,9 +781,9 @@ export const useAppStore = create<AppState & Actions>()(
         redesignPlan: (instruction) => {
           const { plan, profile } = get();
           if (!plan || !profile) return null;
-          const next = patchPlan(plan, instruction, profile);
-          set({ plan: next });
-          return next;
+          // não seta o plano aqui — o caller (applyActions) decide com base
+          // em `changed` e adiciona o changeLog antes de persistir
+          return patchPlan(plan, instruction, profile);
         },
 
         addMessage: (m) =>

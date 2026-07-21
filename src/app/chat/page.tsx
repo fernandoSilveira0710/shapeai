@@ -330,19 +330,23 @@ export default function ChatPage() {
   // o card approve_plan já tem os botões — chips ficam neutros
   const planPending = !intakeOpen && !plan?.approvedAt;
   const unlocked = !intakeOpen && !!plan?.approvedAt;
+  const hasTreino = profile.modules.includes("treino");
+  const hasDieta = profile.modules.includes("dieta");
   const chips = intakeOpen
     ? [...intakeChips(currentIntakeKey), "Depois a gente fala"]
     : planPending
       ? ["Pode perguntar", "Quero ajustar"]
       : ([
-          day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
-          "Treino hoje",
-          "Dieta hoje",
-          "Já almocei",
+          hasTreino && day && !day.isRest && !workoutDoneToday ? "Bora treinar" : null,
+          hasTreino ? "Treino hoje" : null,
+          hasDieta ? "Dieta hoje" : null,
+          hasDieta ? "Já almocei" : null,
           "Registrar peso",
           "Como estou?",
-          "Treino semana",
-          "Dieta semana",
+          hasTreino ? "Treino semana" : null,
+          hasDieta ? "Dieta semana" : null,
+          !hasTreino ? "Ativar treino" : null,
+          !hasDieta ? "Ativar dieta" : null,
         ].filter(Boolean) as string[]);
 
   return (
@@ -630,6 +634,14 @@ export default function ChatPage() {
                   showPlanCards("progress");
                   return;
                 }
+                if (c === "Ativar treino") {
+                  handleSend("Quero ativar o módulo de treino também");
+                  return;
+                }
+                if (c === "Ativar dieta") {
+                  handleSend("Quero ativar o módulo de dieta também");
+                  return;
+                }
                 handleSend(c === "Bora treinar" ? "bora" : c);
               }}
             >
@@ -644,21 +656,23 @@ export default function ChatPage() {
             handleSend();
           }}
         >
-          <button
-            type="button"
-            onClick={handleCameraClick}
-            aria-label={
-              subscription === "pro" ? "Enviar foto do prato" : "Foto do prato (Pro)"
-            }
-            className={cn(
-              "size-11 shrink-0 rounded-xl border flex items-center justify-center transition active:scale-95",
-              subscription === "pro"
-                ? "bg-surface border-border text-muted hover:text-ink"
-                : "bg-surface border-border text-muted/50"
-            )}
-          >
-            <Camera className="size-[18px]" />
-          </button>
+          {hasDieta && (
+            <button
+              type="button"
+              onClick={handleCameraClick}
+              aria-label={
+                subscription === "pro" ? "Enviar foto do prato" : "Foto do prato (Pro)"
+              }
+              className={cn(
+                "size-11 shrink-0 rounded-xl border flex items-center justify-center transition active:scale-95",
+                subscription === "pro"
+                  ? "bg-surface border-border text-muted hover:text-ink"
+                  : "bg-surface border-border text-muted/50"
+              )}
+            >
+              <Camera className="size-[18px]" />
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"

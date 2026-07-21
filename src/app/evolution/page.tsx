@@ -76,12 +76,15 @@ export default function EvolutionPage() {
       mealLogs.filter((l) => l.adherence === "off").map((l) => l.loggedAt.slice(0, 10))
     );
 
+    const mealSlots = plan?.nutrition.meals.map((mm) => mm.slot) ?? [];
+
     const cells: {
       key: string;
       dayNum: number;
       status: DayStatus;
       offPlan: boolean;
     }[] = [];
+    let mealGapCount = 0;
     for (let d = 1; d <= nDays; d++) {
       const key = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const wd = new Date(y, m, d).getDay();
@@ -94,13 +97,22 @@ export default function EvolutionPage() {
       else if (planDay && !planDay.isRest && key === today) status = "future";
       else status = "rest";
       cells.push({ key, dayNum: d, status, offPlan: offSet.has(key) });
+
+      // refeição furada: dia já fechado (antes de hoje, dentro do app) com
+      // pelo menos 1 dos slots do plano sem nenhum log
+      if (key >= signupKey && key < today && mealSlots.length > 0) {
+        const loggedSlots = new Set(
+          mealLogs.filter((l) => l.loggedAt.startsWith(key)).map((l) => l.slot)
+        );
+        if (mealSlots.some((slot) => !loggedSlots.has(slot))) mealGapCount++;
+      }
     }
     const missedCount = cells.filter((c) => c.status === "missed").length;
     const monthLabel = new Intl.DateTimeFormat("pt-BR", {
       month: "long",
       year: "numeric",
     }).format(now);
-    return { cells, startWd, missedCount, monthLabel };
+    return { cells, startWd, missedCount, monthLabel, mealGapCount };
   }, [completed, mealLogs, plan, profile]);
 
   const offPlanCount = useMemo(() => {
@@ -179,6 +191,9 @@ export default function EvolutionPage() {
 
   if (!profile) return null;
 
+  const hasTreino = profile.modules.includes("treino");
+  const hasDieta = profile.modules.includes("dieta");
+
   const maxW = Math.max(...weights.map((w) => w.value), profile.weightKg);
   const minW = Math.min(...weights.map((w) => w.value), profile.weightKg);
 
@@ -201,23 +216,37 @@ export default function EvolutionPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-        <div className="grid grid-cols-4 gap-2">
-          <Card className="text-center py-3 px-1">
-            <div className="text-2xl font-bold text-brand">{streak}</div>
-            <div className="text-[11px] text-muted mt-1">Streak</div>
-          </Card>
-          <Card className="text-center py-3 px-1">
-            <div className="text-2xl font-bold">{completed.length}</div>
-            <div className="text-[11px] text-muted mt-1">Treinos</div>
-          </Card>
-          <Card className="text-center py-3 px-1">
-            <div className="text-2xl font-bold">{calendar.missedCount}</div>
-            <div className="text-[11px] text-muted mt-1">Furos/mês</div>
-          </Card>
-          <Card className="text-center py-3 px-1">
-            <div className="text-2xl font-bold">{offPlanCount}</div>
-            <div className="text-[11px] text-muted mt-1">Fora do plano</div>
-          </Card>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {hasTreino && (
+            <Card className="text-center py-3 px-1">
+              <div className="text-2xl font-bold text-brand">{streak}</div>
+              <div className="text-[11px] text-muted mt-1">Streak</div>
+            </Card>
+          )}
+          {hasTreino && (
+            <Card className="text-center py-3 px-1">
+              <div className="text-2xl font-bold">{completed.length}</div>
+              <div className="text-[11px] text-muted mt-1">Treinos</div>
+            </Card>
+          )}
+          {hasTreino && (
+            <Card className="text-center py-3 px-1">
+              <div className="text-2xl font-bold">{calendar.missedCount}</div>
+              <div className="text-[11px] text-muted mt-1">Furos/mês</div>
+            </Card>
+          )}
+          {hasDieta && (
+            <Card className="text-center py-3 px-1">
+              <div className="text-2xl font-bold">{offPlanCount}</div>
+              <div className="text-[11px] text-muted mt-1">Fora do plano</div>
+            </Card>
+          )}
+          {hasDieta && (
+            <Card className="text-center py-3 px-1">
+              <div className="text-2xl font-bold">{calendar.mealGapCount}</div>
+              <div className="text-[11px] text-muted mt-1">Refeições furadas</div>
+            </Card>
+          )}
         </div>
 
         {/* ——— calendário ——— */}
@@ -324,6 +353,7 @@ export default function EvolutionPage() {
         </Card>
 
         {/* ——— progressão de carga ——— */}
+        {hasTreino && (
         <Card>
           <h2 className="font-semibold mb-3">Progressão de carga</h2>
           {loadProgress.length === 0 ? (
@@ -366,6 +396,7 @@ export default function EvolutionPage() {
             </ul>
           )}
         </Card>
+        )}
 
         {/* ——— medidas ——— */}
         {measures.length > 0 && (
@@ -457,7 +488,7 @@ export default function EvolutionPage() {
               </div>
             )}
 
-            {dayDetail.meals.length > 0 && (
+            {hasDieta && dayDetail.meals.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs text-muted font-medium">Refeições:</p>
                 {dayDetail.meals.map((l) => (

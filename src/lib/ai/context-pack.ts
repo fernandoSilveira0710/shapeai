@@ -29,6 +29,16 @@ export function buildContextPack(s: ContextPackInput): string {
   return [
     `Agora: ${weekday}, ${time} (hora ${hour}) TZ America/Sao_Paulo`,
     `Nome: ${s.profile.displayName}`,
+    `Módulos ativos: ${s.profile.modules?.join(", ") || "treino, dieta"}`,
+    s.profile.substances?.glp1 || s.profile.substances?.anabolic
+      ? `Uso de substância: ${[
+          s.profile.substances.glp1 ? "GLP-1 (Ozempic/Mounjaro/Saxenda) — ajustar apetite/déficit, priorizar densidade nutricional" : "",
+          s.profile.substances.anabolic ? "anabolizante — proteína mais alta, considerar recuperação" : "",
+          s.profile.substances.notes ? `obs: ${s.profile.substances.notes}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}`
+      : "",
     `Objetivo: ${s.profile.goal} · ${s.profile.weightKg}kg · ${s.profile.heightCm}cm · ${s.profile.age} anos`,
     (() => {
       const h = s.profile.heightCm / 100;

@@ -40,6 +40,8 @@ type OpeningCtx = {
   pendingFeedbackLabel?: string;
   /** medidas 14d+ vencidas */
   pendingMeasures?: boolean;
+  /** slots de refeição (café/almoço/lanche/janta) sem log ontem */
+  mealsMissedYesterday?: string[];
 };
 
 /** variação leve pra não soar robô */
@@ -134,6 +136,16 @@ export function buildOpening(ctx: OpeningCtx): string {
       `${time}. MEDIDAS VENCIDAS. FITA MÉTRICA: CINTURA, PEITO, BRAÇO, COXA. REPORTA EM CM.`,
       `${n}, que tal tirar as medidas hoje? 🌸 Cintura, peito, braço e coxa — é onde o progresso aparece antes da balança.`,
       `${n}. Medidas do mês: cintura, peito, braço, coxa. Manda em cm.`
+    );
+  }
+
+  if (ctx.mealsMissedYesterday && ctx.mealsMissedYesterday.length > 0) {
+    const list = ctx.mealsMissedYesterday.join(" e ");
+    return say(
+      `${n}, ontem faltou marcar ${list}. Rolou algo ou só esqueceu de anotar? Se comeu, me conta o que foi que eu registro.`,
+      `${time}. ONTEM SEM REGISTRO: ${list.toUpperCase()}. JUSTIFICATIVA OU RELATO DO QUE COMEU. AGORA.`,
+      `${n} 💛 ontem ficou sem marcar ${list} — tudo bem, só me conta: rolou algo, ou foi só esquecimento? Se lembrar o que comeu, me fala que eu anoto.`,
+      `${n}. Ontem sem log: ${list}. O que rolou?`
     );
   }
 

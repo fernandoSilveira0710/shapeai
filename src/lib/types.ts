@@ -18,6 +18,8 @@ export type Equipment =
   | "peso_corporal"
   | "parque";
 
+export type AppModule = "treino" | "dieta";
+
 export interface UserProfile {
   id: string;
   displayName: string;
@@ -56,6 +58,19 @@ export interface UserProfile {
   trainTime?: string;
   /** quer ser lembrado/cobrado (notificação) */
   wantsReminders?: boolean;
+  /** treino, dieta ou ambos — hoje sempre escolha do próprio usuário */
+  modules: AppModule[];
+  /**
+   * Quem definiu os módulos. Hoje só existe "self" (sem conta de academia/
+   * personal no app ainda) — campo pronto pro dia em que isso existir.
+   */
+  modulesSource?: "self" | "coach_default";
+  /** uso de medicação/substância que muda cálculo de treino e dieta */
+  substances?: {
+    glp1: boolean;
+    anabolic: boolean;
+    notes?: string;
+  };
 }
 
 export interface Exercise {

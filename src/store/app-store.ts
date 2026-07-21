@@ -33,7 +33,7 @@ import type { ChatAction } from "@/app/api/chat/route";
 import { tryVisionMeal } from "@/lib/vision-client";
 import { dayKey, todayKey, weekdayOfKey } from "@/lib/utils";
 import { getExercise } from "@/data/exercises";
-import { computePendings } from "@/lib/pendings";
+import { computePendings, SLOT_LABELS } from "@/lib/pendings";
 import { requestReminderPermission } from "@/lib/reminders";
 import {
   buildDayMealCard,
@@ -633,6 +633,46 @@ export const useAppStore = create<AppState & Actions>()(
             set({ uiRequest: "open_weight_sheet" });
           } else if (a.type === "open_measure_log") {
             set({ uiRequest: "open_measure_sheet" });
+          } else if (a.type === "enable_module") {
+            const prof = get().profile;
+            const pl = get().plan;
+            if (prof && !prof.modules.includes(a.module)) {
+              const nextProfile: UserProfile = {
+                ...prof,
+                modules: [...prof.modules, a.module],
+                modulesSource: "self",
+              };
+              set({ profile: nextProfile });
+              if (pl) {
+                setTimeout(() => {
+                  get().addMessage({
+                    role: "assistant",
+                    content:
+                      a.module === "treino"
+                        ? "Treino ativado — tua semana:"
+                        : "Dieta ativada — tua base:",
+                    rich:
+                      a.module === "treino"
+                        ? buildWeekPlanCard(nextProfile, pl)
+                        : buildDietCard(nextProfile, pl),
+                  });
+                  void get().syncToCloud();
+                }, 700);
+              }
+            }
+          } else if (a.type === "log_past_meal") {
+            const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(a.date);
+            if (dateOk && a.date <= todayKey()) {
+              const log: MealLog = {
+                id: uid(),
+                slot: a.slot,
+                description: a.description,
+                adherence: (a.adherence as MealLog["adherence"]) || "partial",
+                loggedAt: `${a.date}T12:00:00.000Z`,
+                source: "text",
+              };
+              set((st) => ({ mealLogs: [...st.mealLogs, log] }));
+            }
           } else if (a.type === "log_skip") {
             // skip só narrativa por enquanto
           }
@@ -744,7 +784,9 @@ export const useAppStore = create<AppState & Actions>()(
           const p = payload.profile;
           const queue = p && !p.intakeCompleted ? buildIntakeQueue(p).map((q) => q.key) : [];
           set({
-            profile: payload.profile ?? null,
+            profile: payload.profile
+              ? { ...payload.profile, modules: payload.profile.modules ?? ["treino", "dieta"] }
+              : null,
             plan: payload.plan ?? null,
             messages: payload.messages ?? [],
             sessions: payload.sessions ?? [],
@@ -887,32 +929,43 @@ export const useAppStore = create<AppState & Actions>()(
               (x.status === "completed" || x.status === "partial")
           );
 
-          // pendências do "personal vivo": feedback > peso 7d > medidas 14d > refeição
+          const hasTreino = s.profile.modules.includes("treino");
+          const hasDieta = s.profile.modules.includes("dieta");
+
+          // pendências do "personal vivo": feedback > peso 7d > medidas 14d >
+          // refeição de ontem > refeição de hoje
           const pendings = computePendings(s);
-          const feedbackPending = pendings.find(
-            (p) => p.type === "post_workout_feedback"
-          );
+          const feedbackPending = hasTreino
+            ? pendings.find((p) => p.type === "post_workout_feedback")
+            : undefined;
           const weightPending = pendings.some((p) => p.type === "weight_due");
           const measuresPending = pendings.some((p) => p.type === "measures_due");
+          const mealGapPending = hasDieta
+            ? pendings.find((p) => p.type === "meal_gap_yesterday")
+            : undefined;
 
           const opening = buildOpening({
             name: s.profile.displayName,
             tone: s.profile.tone,
-            hasWorkoutToday: !!day && !day.isRest,
+            hasWorkoutToday: hasTreino && !!day && !day.isRest,
             workoutLabel: day?.label,
             workoutDoneToday,
-            missedYesterday: missedYesterday(s.sessions, s.plan, s.profile),
+            missedYesterday: hasTreino && missedYesterday(s.sessions, s.plan, s.profile),
             pendingWeight: weightPending,
             pendingFeedbackLabel:
               feedbackPending?.type === "post_workout_feedback"
                 ? feedbackPending.session.label
                 : undefined,
             pendingMeasures: !weightPending && measuresPending,
+            mealsMissedYesterday:
+              mealGapPending?.type === "meal_gap_yesterday"
+                ? mealGapPending.slots.map((sl) => SLOT_LABELS[sl] ?? sl)
+                : undefined,
           });
 
           const cards: ChatMessage[] = [msg("assistant", opening)];
           // se abertura é puxada de feedback, não empilha card de treino junto
-          if (!feedbackPending && day && !day.isRest && !workoutDoneToday) {
+          if (hasTreino && !feedbackPending && day && !day.isRest && !workoutDoneToday) {
             cards.push(
               msg(
                 "assistant",
@@ -1482,6 +1535,13 @@ export const useAppStore = create<AppState & Actions>()(
         intakeIndex: s.intakeIndex,
         awaitingFeedbackId: s.awaitingFeedbackId,
       }),
+      // perfis salvos antes do campo `modules` existir não têm ele — backfill
+      // pra "treino"+"dieta" (comportamento de sempre) em vez de crashar leitura.
+      onRehydrateStorage: () => (state) => {
+        if (state?.profile && !state.profile.modules) {
+          state.profile.modules = ["treino", "dieta"];
+        }
+      },
     }
   )
 );

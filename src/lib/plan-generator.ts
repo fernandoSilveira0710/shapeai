@@ -106,17 +106,22 @@ const SPLITS: Record<string, { label: string; muscles: string[] }[]> = {
   ],
 };
 
-function goalCalories(profile: Pick<UserProfile, "weightKg" | "heightCm" | "age" | "goal">) {
+function goalCalories(
+  profile: Pick<UserProfile, "weightKg" | "heightCm" | "age" | "goal" | "substances">
+) {
   // Mifflin rough male default (MVP)
   const bmr = 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age + 5;
   const tdee = bmr * 1.45;
+  // GLP-1 já suprime apetite natural — empilhar déficit agressivo em cima
+  // arrisca desnutrição. Corta a magnitude do ajuste em vez de somar.
+  const glp1 = profile.substances?.glp1;
   switch (profile.goal) {
     case "emagrecimento":
-      return Math.round(tdee - 400);
+      return Math.round(tdee - (glp1 ? 250 : 400));
     case "hipertrofia":
-      return Math.round(tdee + 250);
+      return Math.round(tdee + (glp1 ? 150 : 250));
     case "definicao":
-      return Math.round(tdee - 200);
+      return Math.round(tdee - (glp1 ? 100 : 200));
     default:
       return Math.round(tdee);
   }
@@ -125,11 +130,21 @@ function goalCalories(profile: Pick<UserProfile, "weightKg" | "heightCm" | "age"
 function buildNutrition(
   profile: Pick<
     UserProfile,
-    "weightKg" | "heightCm" | "age" | "goal" | "budgetFood" | "dietRestrictions" | "cooksAtHome"
+    | "weightKg"
+    | "heightCm"
+    | "age"
+    | "goal"
+    | "budgetFood"
+    | "dietRestrictions"
+    | "cooksAtHome"
+    | "substances"
   >
 ): NutritionPlan {
   const kcal = goalCalories(profile);
-  const proteinG = Math.round(profile.weightKg * (profile.goal === "hipertrofia" ? 2.0 : 1.8));
+  // anabolizante sobe síntese proteica — teto de proteína um pouco maior
+  const proteinPerKg =
+    (profile.goal === "hipertrofia" ? 2.0 : 1.8) + (profile.substances?.anabolic ? 0.2 : 0);
+  const proteinG = Math.round(profile.weightKg * proteinPerKg);
   const fatG = Math.round((kcal * 0.25) / 9);
   const carbsG = Math.round((kcal - proteinG * 4 - fatG * 9) / 4);
 
@@ -263,6 +278,12 @@ function buildNutrition(
       : "Ajustamos se enjoar — é só falar no chat.",
     !profile.cooksAtHome
       ? "Como você come fora, as trocas no restaurante importam mais que receita gourmet."
+      : "",
+    profile.substances?.glp1
+      ? "Com GLP-1 o apetite já vem menor — prioriza densidade nutricional (proteína primeiro no prato) em vez de forçar volume de comida."
+      : "",
+    profile.substances?.anabolic
+      ? "Proteína um pouco mais alta pra acompanhar a síntese proteica aumentada."
       : "",
   ]
     .filter(Boolean)

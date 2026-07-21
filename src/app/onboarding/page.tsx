@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Chip, Input, Label, ProgressBar, Textarea } from "@/components/ui";
 import { TONE_META } from "@/lib/tone";
-import type { Equipment, Goal, Tone, UserProfile } from "@/lib/types";
+import type { AppModule, Equipment, Goal, Tone, UserProfile } from "@/lib/types";
 import { generatePlanFromProfile, useAppStore } from "@/store/app-store";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
 
@@ -53,6 +53,10 @@ export default function OnboardingPage() {
   const [generating, setGenerating] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
+  const [modules, setModules] = useState<AppModule[]>(["treino", "dieta"]);
+  const [glp1, setGlp1] = useState(false);
+  const [anabolic, setAnabolic] = useState(false);
+  const [substanceNotes, setSubstanceNotes] = useState("");
   const [weightKg, setWeightKg] = useState("78");
   const [heightCm, setHeightCm] = useState("175");
   const [age, setAge] = useState("28");
@@ -74,7 +78,7 @@ export default function OnboardingPage() {
     typeof generatePlanFromProfile
   > | null>(null);
 
-  const totalSteps = 8;
+  const totalSteps = 10;
   const progress = ((step + 1) / totalSteps) * 100;
 
   // validação corpo (spec: peso 30–300, altura 100–250, 18+)
@@ -109,6 +113,12 @@ export default function OnboardingPage() {
       tone,
       onboardingCompleted: true,
       createdAt: new Date().toISOString(),
+      modules,
+      modulesSource: "self",
+      substances:
+        glp1 || anabolic || substanceNotes.trim()
+          ? { glp1, anabolic, notes: substanceNotes.trim() || undefined }
+          : undefined,
     };
   }, [
     displayName,
@@ -126,7 +136,17 @@ export default function OnboardingPage() {
     trainDays,
     duration,
     tone,
+    modules,
+    glp1,
+    anabolic,
+    substanceNotes,
   ]);
+
+  function toggleModule(m: AppModule) {
+    setModules((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]
+    );
+  }
 
   function toggleDay(d: number) {
     setTrainDays((prev) =>
@@ -145,7 +165,7 @@ export default function OnboardingPage() {
     await new Promise((r) => setTimeout(r, 900));
     setDraftPlan(generatePlanFromProfile(profileDraft));
     setGenerating(false);
-    setStep(7);
+    setStep(9);
   }
 
   function finish() {
@@ -202,6 +222,46 @@ export default function OnboardingPage() {
 
         {step === 1 && (
           <section className="space-y-4 animate-rise">
+            <div className="text-4xl" aria-hidden="true">🧩</div>
+            <h1 className="text-3xl font-bold tracking-tight">O que você quer aqui?</h1>
+            <p className="text-muted text-sm">
+              Dá pra usar só treino, só dieta, ou os dois. Muda depois quando quiser,
+              é só pedir no chat.
+            </p>
+            <div className="space-y-2">
+              {(
+                [
+                  ["treino", "Só treino", "Plano de exercícios, sem acompanhar comida."],
+                  ["dieta", "Só dieta", "Plano alimentar, sem acompanhar treino."],
+                  ["ambos", "Os dois", "Treino e dieta juntos — o combo completo."],
+                ] as const
+              ).map(([id, title, blurb]) => {
+                const active =
+                  id === "ambos"
+                    ? modules.length === 2
+                    : modules.length === 1 && modules[0] === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() =>
+                      setModules(id === "ambos" ? ["treino", "dieta"] : [id as AppModule])
+                    }
+                    className={`w-full text-left rounded-2xl border p-4 transition ${
+                      active ? "border-brand bg-brand/10" : "border-border bg-surface"
+                    }`}
+                  >
+                    <div className="font-semibold">{title}</div>
+                    <div className="text-sm text-muted mt-1">{blurb}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {step === 2 && (
+          <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">📏</div>
             <h1 className="text-3xl font-bold tracking-tight">Corpo agora</h1>
             <div className="grid grid-cols-3 gap-3">
@@ -230,7 +290,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">🎯</div>
             <h1 className="text-3xl font-bold tracking-tight">Qual teu objetivo?</h1>
@@ -254,7 +314,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">🏋️</div>
             <h1 className="text-3xl font-bold tracking-tight">Experiência e equipamento</h1>
@@ -299,7 +359,41 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
+          <section className="space-y-4 animate-rise">
+            <div className="text-4xl" aria-hidden="true">💊</div>
+            <h1 className="text-3xl font-bold tracking-tight">Alguma ajuda extra?</h1>
+            <p className="text-sm text-muted">
+              Pergunta técnica, sem julgamento — muda o cálculo de treino e dieta.
+            </p>
+            <div>
+              <Label>Uso hoje</Label>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={glp1} onClick={() => setGlp1((v) => !v)}>
+                  GLP-1 (Ozempic, Mounjaro, Saxenda…)
+                </Chip>
+                <Chip active={anabolic} onClick={() => setAnabolic((v) => !v)}>
+                  Anabolizante
+                </Chip>
+              </div>
+            </div>
+            {(glp1 || anabolic) && (
+              <div>
+                <Label>Quer detalhar? (opcional)</Label>
+                <Input
+                  value={substanceNotes}
+                  onChange={(e) => setSubstanceNotes(e.target.value)}
+                  placeholder="Ex: Mounjaro há 3 meses, dose semanal"
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted">
+              Não usa nenhum dos dois? Só segue pro próximo passo.
+            </p>
+          </section>
+        )}
+
+        {step === 6 && (
           <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">🧭</div>
             <h1 className="text-3xl font-bold tracking-tight">Tua rotina real</h1>
@@ -358,7 +452,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 5 && (
+        {step === 7 && (
           <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">📅</div>
             <h1 className="text-3xl font-bold tracking-tight">Grade de treino</h1>
@@ -385,7 +479,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 6 && (
+        {step === 8 && (
           <section className="space-y-4 animate-rise">
             <div className="text-4xl" aria-hidden="true">🎙️</div>
             <h1 className="text-3xl font-bold tracking-tight">Tom do teu personal</h1>
@@ -411,7 +505,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {step === 7 && draftPlan && (
+        {step === 9 && draftPlan && (
           <section className="flex flex-col items-center justify-center text-center h-full py-16 space-y-5 animate-rise">
             <div className="size-16 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center">
               <span className="text-3xl">✓</span>
@@ -431,31 +525,32 @@ export default function OnboardingPage() {
       </div>
 
       <footer className="p-5 border-t border-border space-y-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-        {step < 6 && (
+        {step < 8 && (
           <Button
             className="w-full"
             size="lg"
             disabled={
               (step === 0 && (!displayName.trim() || !consent)) ||
-              (step === 1 && !bodyValid) ||
-              (step === 5 && trainDays.length < 2)
+              (step === 1 && modules.length === 0) ||
+              (step === 2 && !bodyValid) ||
+              (step === 7 && trainDays.length < 2)
             }
             onClick={() => setStep((s) => s + 1)}
           >
             Continuar
           </Button>
         )}
-        {step === 6 && (
+        {step === 8 && (
           <Button className="w-full" size="lg" onClick={goGenerate} disabled={generating}>
             {generating ? "Montando teu plano…" : "Gerar meu plano"}
           </Button>
         )}
-        {step === 7 && (
+        {step === 9 && (
           <Button className="w-full" size="lg" onClick={finish}>
             Ok, vamos conversar
           </Button>
         )}
-        {step > 0 && step < 7 && (
+        {step > 0 && step < 9 && (
           <Button variant="ghost" className="w-full" onClick={() => setStep((s) => s - 1)}>
             Voltar
           </Button>

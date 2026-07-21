@@ -29,7 +29,15 @@ export type ChatAction =
       kind: "week_workout" | "week_diet" | "day_workout" | "day_meal" | "progress";
     }
   | { type: "open_weight_log" }
-  | { type: "open_measure_log" };
+  | { type: "open_measure_log" }
+  | { type: "enable_module"; module: "treino" | "dieta" }
+  | {
+      type: "log_past_meal";
+      date: string;
+      slot: string;
+      description: string;
+      adherence: string;
+    };
 
 /**
  * Chat streaming + tools.
@@ -122,7 +130,7 @@ export async function POST(req: NextRequest) {
         }),
         log_meal: tool({
           description:
-            "Registra refeição descrita pelo usuário. SEMPRE chame na hora — nunca pergunte 'posso registrar?' antes, registro é fato, não pedido de permissão. Infira o slot pela hora atual do contexto se ele não disser qual refeição foi.",
+            "Registra refeição de HOJE descrita pelo usuário. SEMPRE chame na hora — nunca pergunte 'posso registrar?' antes, registro é fato, não pedido de permissão. Infira o slot pela hora atual do contexto se ele não disser qual refeição foi. Se a refeição for de um dia ANTERIOR (ex: reconciliando 'ontem faltou log' do contexto), NÃO use esta tool — use log_past_meal com a data certa.",
           inputSchema: z.object({
             slot: z
               .enum(["cafe", "almoco", "lanche", "janta", "outro"])
@@ -164,6 +172,17 @@ export async function POST(req: NextRequest) {
           execute: async () => {
             actions.push({ type: "open_measure_log" });
             return { ok: true };
+          },
+        }),
+        enable_module: tool({
+          description:
+            "Ativa o módulo treino ou dieta quando o usuário pediu algo desse módulo estando ele desligado e confirmou que quer ativar. NÃO chame sem confirmação explícita — pergunte antes.",
+          inputSchema: z.object({
+            module: z.enum(["treino", "dieta"]),
+          }),
+          execute: async ({ module }) => {
+            actions.push({ type: "enable_module", module });
+            return { ok: true, module };
           },
         }),
         redesign_plan: tool({
@@ -235,6 +254,20 @@ export async function POST(req: NextRequest) {
           execute: async ({ date, note }) => {
             actions.push({ type: "log_past_workout", date, note });
             return { ok: true, message: `Treino de ${date} registrado.` };
+          },
+        }),
+        log_past_meal: tool({
+          description:
+            "Registra refeição de um dia anterior que o usuário esqueceu de marcar (ex.: contexto avisa que ontem faltou log e ele descreve o que comeu). Só chame se ele DESCREVER o que comeu — se a resposta for vaga tipo 'esqueci', NÃO chame, deixa como furo.",
+          inputSchema: z.object({
+            date: z.string().describe("YYYY-MM-DD do dia esquecido"),
+            slot: z.enum(["cafe", "almoco", "lanche", "janta", "outro"]),
+            description: z.string(),
+            adherence: z.enum(["on_plan", "partial", "off"]),
+          }),
+          execute: async ({ date, slot, description, adherence }) => {
+            actions.push({ type: "log_past_meal", date, slot, description, adherence });
+            return { ok: true, message: `Refeição de ${date} registrada.` };
           },
         }),
         swap_exercise: tool({

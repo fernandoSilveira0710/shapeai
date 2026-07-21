@@ -1,13 +1,21 @@
 import type { AppState, WorkoutSession } from "@/lib/types";
-import { nowParts } from "@/lib/utils";
+import { dayKey, nowParts } from "@/lib/utils";
 
 export type Pending =
   | { type: "post_workout_feedback"; session: WorkoutSession }
   | { type: "weight_due"; daysSince: number | null }
   | { type: "measures_due"; daysSince: number | null }
-  | { type: "meal_check"; slot: "almoco" | "janta" };
+  | { type: "meal_check"; slot: "cafe" | "almoco" | "lanche" | "janta" }
+  | { type: "meal_gap_yesterday"; slots: string[]; date: string };
 
-type PendingsInput = Pick<AppState, "sessions" | "metrics" | "mealLogs">;
+export const SLOT_LABELS: Record<string, string> = {
+  cafe: "café",
+  almoco: "almoço",
+  lanche: "lanche",
+  janta: "janta",
+};
+
+type PendingsInput = Pick<AppState, "sessions" | "metrics" | "mealLogs" | "profile">;
 
 const DAY_MS = 86_400_000;
 
@@ -63,13 +71,35 @@ export function computePendings(s: PendingsInput): Pending[] {
     out.push({ type: "measures_due", daysSince: mDays });
   }
 
-  // 4) refeição principal sem log no horário
-  const today = new Date().toISOString().slice(0, 10);
-  const mealsToday = s.mealLogs.filter((m) => m.loggedAt.startsWith(today));
-  const hasLunch = mealsToday.some((m) => m.slot === "almoco");
-  const hasDinner = mealsToday.some((m) => m.slot === "janta");
-  if (hour >= 12 && hour <= 15 && !hasLunch) out.push({ type: "meal_check", slot: "almoco" });
-  else if (hour >= 19 && hour <= 22 && !hasDinner) out.push({ type: "meal_check", slot: "janta" });
+  const hasDieta = !s.profile || s.profile.modules.includes("dieta");
+
+  if (hasDieta) {
+    // 4) refeição de ontem sem log em nenhum slot do plano — reconcilia antes
+    // de cobrar hoje (prioridade maior que o meal_check do dia atual)
+    const yKey = dayKey(-1);
+    if (!s.profile || yKey >= s.profile.createdAt.slice(0, 10)) {
+      const mealsYesterday = s.mealLogs.filter((m) => m.loggedAt.startsWith(yKey));
+      const expectedSlots: (keyof typeof SLOT_LABELS)[] = ["cafe", "almoco", "lanche", "janta"];
+      const missing = expectedSlots.filter(
+        (slot) => !mealsYesterday.some((m) => m.slot === slot)
+      );
+      if (missing.length > 0) {
+        out.push({ type: "meal_gap_yesterday", slots: missing, date: yKey });
+      }
+    }
+
+    // 5) refeição principal sem log no horário (hoje)
+    const today = dayKey(0);
+    const mealsToday = s.mealLogs.filter((m) => m.loggedAt.startsWith(today));
+    const has = (slot: string) => mealsToday.some((m) => m.slot === slot);
+    if (hour >= 6 && hour <= 10 && !has("cafe")) out.push({ type: "meal_check", slot: "cafe" });
+    else if (hour >= 12 && hour <= 15 && !has("almoco"))
+      out.push({ type: "meal_check", slot: "almoco" });
+    else if (hour >= 15 && hour <= 18 && !has("lanche"))
+      out.push({ type: "meal_check", slot: "lanche" });
+    else if (hour >= 19 && hour <= 22 && !has("janta"))
+      out.push({ type: "meal_check", slot: "janta" });
+  }
 
   return out;
 }
@@ -94,7 +124,9 @@ export function pendingsForContext(s: PendingsInput): string {
               ? "- Nunca tirou medidas — sugere fita métrica (cintura, peito, braço, coxa)"
               : `- Medidas vencidas há ${x.daysSince} dias`;
           case "meal_check":
-            return `- ${x.slot === "almoco" ? "Almoço" : "Janta"} sem registro hoje — pergunta o prato`;
+            return `- ${SLOT_LABELS[x.slot]} sem registro hoje — pergunta o prato`;
+          case "meal_gap_yesterday":
+            return `- Ontem (${x.date}) faltou log de: ${x.slots.map((s) => SLOT_LABELS[s] ?? s).join(", ")} — pergunta o que rolou. Se a resposta for vaga ("esqueci", sem detalhe), NÃO invente log, é furo. Se ele descrever o que comeu, chame log_past_meal com date="${x.date}" (NÃO log_meal — log_meal é só pra HOJE), um por slot descrito.`;
         }
       })
       .join("\n")

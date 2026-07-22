@@ -6,7 +6,7 @@ import { nowParts, todayKey } from "@/lib/utils";
 
 export type ContextPackInput = Pick<
   AppState,
-  "profile" | "plan" | "sessions" | "mealLogs" | "metrics" | "subscription"
+  "profile" | "plan" | "sessions" | "mealLogs" | "metrics" | "subscription" | "nudgedToday"
 >;
 
 /** Context pack legível pro system prompt (AI-ENGINE). */

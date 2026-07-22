@@ -15,7 +15,10 @@ export const SLOT_LABELS: Record<string, string> = {
   janta: "janta",
 };
 
-type PendingsInput = Pick<AppState, "sessions" | "metrics" | "mealLogs" | "profile">;
+type PendingsInput = Pick<
+  AppState,
+  "sessions" | "metrics" | "mealLogs" | "profile" | "nudgedToday"
+>;
 
 const DAY_MS = 86_400_000;
 
@@ -31,6 +34,9 @@ function daysSince(iso: string | undefined) {
 export function computePendings(s: PendingsInput): Pending[] {
   const out: Pending[] = [];
   const { hour } = nowParts();
+  const today = dayKey(0);
+  // já cobrado hoje (guardrail anti-repetição) — some da lista pro resto do dia
+  const nudgedKind = s.nudgedToday?.date === today ? s.nudgedToday.kind : null;
 
   // 1) treino recém-fechado sem feedback (até 20h atrás — depois esfria)
   const lastDone = [...s.sessions]
@@ -89,7 +95,6 @@ export function computePendings(s: PendingsInput): Pending[] {
     }
 
     // 5) refeição principal sem log no horário (hoje)
-    const today = dayKey(0);
     const mealsToday = s.mealLogs.filter((m) => m.loggedAt.startsWith(today));
     const has = (slot: string) => mealsToday.some((m) => m.slot === slot);
     if (hour >= 6 && hour <= 10 && !has("cafe")) out.push({ type: "meal_check", slot: "cafe" });
@@ -101,7 +106,9 @@ export function computePendings(s: PendingsInput): Pending[] {
       out.push({ type: "meal_check", slot: "janta" });
   }
 
-  return out;
+  // guardrail anti-repetição: já foi cobrado hoje (ex.: na abertura) → some
+  // da lista pro resto do dia, mesmo que a condição ainda seja verdadeira
+  return nudgedKind ? out.filter((p) => p.type !== nudgedKind) : out;
 }
 
 /** Resumo das pendências pro context pack do LLM */

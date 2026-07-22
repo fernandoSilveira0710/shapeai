@@ -27,6 +27,7 @@ export async function streamLlmReply(
     | "messages"
     | "dailyLlmCount"
     | "dailyLlmDate"
+    | "nudgedToday"
   >,
   onToken: (chunk: string) => void,
   signal?: AbortSignal
@@ -116,7 +117,7 @@ export async function tryLlmReply(
   _message: string,
   s: Pick<
     AppState,
-    "profile" | "plan" | "sessions" | "mealLogs" | "metrics" | "subscription" | "messages" | "dailyLlmCount" | "dailyLlmDate"
+    "profile" | "plan" | "sessions" | "mealLogs" | "metrics" | "subscription" | "messages" | "dailyLlmCount" | "dailyLlmDate" | "nudgedToday"
   >
 ): Promise<string | null> {
   let acc = "";

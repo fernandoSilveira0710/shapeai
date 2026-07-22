@@ -164,6 +164,7 @@ const initial: AppState = {
   intakeIndex: 0,
   awaitingFeedbackId: null,
   uiRequest: null,
+  nudgedToday: null,
 };
 
 function missedYesterday(
@@ -944,13 +945,17 @@ export const useAppStore = create<AppState & Actions>()(
             ? pendings.find((p) => p.type === "meal_gap_yesterday")
             : undefined;
 
+          const ctxHasWorkoutToday = hasTreino && !!day && !day.isRest;
+          const ctxMissedYesterday =
+            hasTreino && missedYesterday(s.sessions, s.plan, s.profile);
+
           const opening = buildOpening({
             name: s.profile.displayName,
             tone: s.profile.tone,
-            hasWorkoutToday: hasTreino && !!day && !day.isRest,
+            hasWorkoutToday: ctxHasWorkoutToday,
             workoutLabel: day?.label,
             workoutDoneToday,
-            missedYesterday: hasTreino && missedYesterday(s.sessions, s.plan, s.profile),
+            missedYesterday: ctxMissedYesterday,
             pendingWeight: weightPending,
             pendingFeedbackLabel:
               feedbackPending?.type === "post_workout_feedback"
@@ -965,7 +970,7 @@ export const useAppStore = create<AppState & Actions>()(
 
           const cards: ChatMessage[] = [msg("assistant", opening)];
           // se abertura é puxada de feedback, não empilha card de treino junto
-          if (hasTreino && !feedbackPending && day && !day.isRest && !workoutDoneToday) {
+          if (!feedbackPending && ctxHasWorkoutToday && !workoutDoneToday) {
             cards.push(
               msg(
                 "assistant",
@@ -975,6 +980,25 @@ export const useAppStore = create<AppState & Actions>()(
             );
           }
 
+          // guardrail anti-repetição: espelha a mesma ordem de prioridade do
+          // buildOpening — a pendência que efetivamente apareceu na abertura
+          // some do contexto da IA pro resto do dia (não é cobrada de novo)
+          const shownKind = feedbackPending
+            ? "post_workout_feedback"
+            : ctxMissedYesterday && ctxHasWorkoutToday && !workoutDoneToday
+              ? null
+              : ctxHasWorkoutToday && !workoutDoneToday
+                ? null
+                : workoutDoneToday
+                  ? null
+                  : weightPending
+                    ? "weight_due"
+                    : measuresPending
+                      ? "measures_due"
+                      : mealGapPending
+                        ? "meal_gap_yesterday"
+                        : null;
+
           set({
             messages: [...s.messages, ...cards],
             lastOpenDate: today,
@@ -982,6 +1006,7 @@ export const useAppStore = create<AppState & Actions>()(
               feedbackPending?.type === "post_workout_feedback"
                 ? feedbackPending.session.id
                 : s.awaitingFeedbackId,
+            nudgedToday: shownKind ? { kind: shownKind, date: today } : s.nudgedToday,
           });
         },
 
@@ -1534,6 +1559,7 @@ export const useAppStore = create<AppState & Actions>()(
         intakeQueue: s.intakeQueue,
         intakeIndex: s.intakeIndex,
         awaitingFeedbackId: s.awaitingFeedbackId,
+        nudgedToday: s.nudgedToday,
       }),
       // perfis salvos antes do campo `modules` existir não têm ele — backfill
       // pra "treino"+"dieta" (comportamento de sempre) em vez de crashar leitura.

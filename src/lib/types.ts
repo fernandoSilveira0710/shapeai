@@ -261,4 +261,10 @@ export interface AppState {
    * e limpa depois de atender.
    */
   uiRequest: "open_weight_sheet" | "open_measure_sheet" | null;
+  /**
+   * Guardrail anti-repetição: qual pendência já foi cobrada na abertura de
+   * hoje. Some do contexto da IA pro resto do dia — evita cobrar 2x a
+   * mesma coisa se o usuário ignorar e reabrir o chat depois.
+   */
+  nudgedToday: { kind: string; date: string } | null;
 }

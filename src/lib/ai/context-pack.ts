@@ -181,3 +181,65 @@ export function toneBlock(tone: string) {
       return "Brother: gíria leve BR, 'meu rei', zoa sem humilhar, emoji moderado, cobrança média-alta.";
   }
 }
+
+/** Uma linha de `profile_constraints` (Supabase) — ver GOVERNANCA-IA.md */
+export type ProfessionalConstraint = {
+  scope: "treino" | "dieta" | "comportamento";
+  kcal_target: number | null;
+  protein_target_g: number | null;
+  banned_exercise_ids: string[] | null;
+  banned_foods: string[] | null;
+  fixed_training_days: number[] | null;
+  tone_override: string | null;
+  notes: string | null;
+};
+
+/**
+ * Bloco de regras do profissional (Nível 1 — a IA não pode contrariar).
+ * Buscado SERVER-SIDE em api/chat/route.ts, nunca aceito do client — ver
+ * "Fluxo técnico" em 02-painel/GOVERNANCA-IA.md pro porquê.
+ */
+export function buildConstraintsBlock(constraints: ProfessionalConstraint[]): string {
+  if (!constraints.length) return "";
+
+  const lines = constraints.flatMap((c) => {
+    const out: string[] = [];
+    if (c.kcal_target || c.protein_target_g) {
+      out.push(
+        `- Meta: ${c.kcal_target ? `${c.kcal_target} kcal` : ""}${
+          c.kcal_target && c.protein_target_g ? ", " : ""
+        }${c.protein_target_g ? `${c.protein_target_g}g proteína` : ""}`.trim()
+      );
+    }
+    if (c.banned_exercise_ids?.length) {
+      out.push(
+        `- Exercícios banidos: ${c.banned_exercise_ids
+          .map((id) => getExercise(id)?.namePt ?? id)
+          .join(", ")}`
+      );
+    }
+    if (c.banned_foods?.length) {
+      out.push(`- Alimentos banidos: ${c.banned_foods.join(", ")}`);
+    }
+    if (c.fixed_training_days?.length) {
+      out.push(
+        `- Dias de treino fixos: ${c.fixed_training_days
+          .map((d) => WEEKDAY_LABELS[d])
+          .join(", ")} — não muda isso sozinho`
+      );
+    }
+    if (c.tone_override) {
+      out.push(`- Tom forçado pelo profissional: ${c.tone_override}`);
+    }
+    if (c.notes?.trim()) {
+      out.push(`- Orientação: "${c.notes.trim()}"`);
+    }
+    return out;
+  });
+
+  if (!lines.length) return "";
+
+  return `\n\n# Regras do profissional (Nível 1 — você NÃO PODE contrariar isto)\n${lines.join(
+    "\n"
+  )}\n\nSe o aluno pedir algo que viola isto, recuse com transparência ("teu personal/nutri definiu X, não posso mudar sozinho") e ofereça alternativa dentro do que ainda é livre. Guardrails de segurança do Shape (anti-TCA, déficit mínimo) valem por cima disto também.`;
+}

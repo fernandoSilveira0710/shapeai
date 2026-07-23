@@ -25,6 +25,9 @@ export default function MePage() {
   const [pushStatus, setPushStatus] = useState<string>("");
   const [installHint, setInstallHint] = useState("");
   const [syncMsg, setSyncMsg] = useState("");
+  const [linkCode, setLinkCode] = useState("");
+  const [linkStatus, setLinkStatus] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
 
   useEffect(() => {
     if (!profile?.onboardingCompleted) {
@@ -70,6 +73,31 @@ export default function MePage() {
       authUserId
         ? "Snapshot enviado (precisa da migration app_snapshots)."
         : "Faça login Supabase pra sync na nuvem."
+    );
+  }
+
+  async function linkCoach() {
+    if (!linkCode.trim()) return;
+    setLinking(true);
+    setLinkStatus(null);
+    const res = await fetch("/api/b2b/invite/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: linkCode.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setLinking(false);
+    if (!res.ok) {
+      setLinkStatus(
+        data.error === "invite_invalid"
+          ? "Código inválido, expirado ou já usado."
+          : "Não rolou vincular. Confere o código."
+      );
+      return;
+    }
+    setLinkCode("");
+    setLinkStatus(
+      `Vinculado${data.branding?.display_name ? ` a ${data.branding.display_name}` : ""}! Teu treino e dieta continuam iguais — teu personal/nutri agora pode ajustar regras.`
     );
   }
 
@@ -147,6 +175,37 @@ export default function MePage() {
             )}
             {syncMsg && <p className="text-xs text-muted">{syncMsg}</p>}
           </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-2">Tenho personal/academia</h2>
+          {authUserId ? (
+            <>
+              <p className="text-sm text-muted mb-3">
+                Recebeu um código do teu personal, nutri ou academia? Cola
+                aqui — teu histórico continua igual, só ganha as regras
+                dele.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={linkCode}
+                  onChange={(e) => setLinkCode(e.target.value)}
+                  placeholder="Código"
+                  className="flex-1 h-11 rounded-xl bg-surface border border-border px-3 text-sm outline-none focus:border-brand/60"
+                />
+                <Button onClick={linkCoach} disabled={linking || !linkCode.trim()}>
+                  {linking ? "…" : "Vincular"}
+                </Button>
+              </div>
+              {linkStatus && (
+                <p className="text-xs text-muted mt-2">{linkStatus}</p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted">
+              Entra com Google/email acima primeiro — vínculo precisa de conta.
+            </p>
+          )}
         </Card>
 
         <Card>

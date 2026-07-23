@@ -34,8 +34,10 @@ export async function GET(request: Request) {
       });
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
-        // app client decide chat vs onboarding via snapshot/localStorage
-        const dest = next === "/onboarding" ? "/onboarding" : "/";
+        // só aceita path interno (evita open-redirect) — painel/join usam
+        // `next` pra voltar pro fluxo certo pós-auth, app do aluno decide
+        // chat vs onboarding via snapshot/localStorage quando next="/onboarding"
+        const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
         return NextResponse.redirect(`${origin}${dest}`);
       }
     }

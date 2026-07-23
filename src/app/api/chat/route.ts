@@ -3,6 +3,8 @@ import { streamText, tool, stepCountIs } from "ai";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { buildSystemPrompt } from "@/lib/ai/system-prompt";
+import { buildConstraintsBlock, type ProfessionalConstraint } from "@/lib/ai/context-pack";
+import { createSupabaseServer } from "@/lib/supabase/server";
 
 export type ChatAction =
   | { type: "open_workout" }
@@ -96,7 +98,44 @@ export async function POST(req: NextRequest) {
   const openai = createOpenAI({ apiKey, baseURL });
   const actions: ChatAction[] = [];
 
-  const system = buildSystemPrompt(tone, context);
+  // Regras do profissional (painel B2B) — busca SEMPRE server-side pelo
+  // user_id autenticado, nunca aceita do body do request. Sem sessão ou
+  // sem vínculo: no-op, comportamento idêntico ao de hoje. Ver
+  // 02-painel/GOVERNANCA-IA.md ("Fluxo técnico" / "Por que isso TEM que
+  // ser server-side").
+  let constraintsBlock = "";
+  try {
+    const supabase = await createSupabaseServer();
+    if (supabase) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const { data: links } = await supabase
+          .from("student_links")
+          .select("id")
+          .eq("user_id", user.id)
+          .neq("status", "churned");
+        const linkIds = (links ?? []).map((l) => l.id as string);
+        if (linkIds.length) {
+          const { data: constraints } = await supabase
+            .from("profile_constraints")
+            .select(
+              "scope, kcal_target, protein_target_g, banned_exercise_ids, banned_foods, fixed_training_days, tone_override, notes"
+            )
+            .in("student_link_id", linkIds);
+          constraintsBlock = buildConstraintsBlock(
+            (constraints ?? []) as ProfessionalConstraint[]
+          );
+        }
+      }
+    }
+  } catch {
+    // nunca quebra o chat por falha de fetch de constraint (ex.: migration
+    // ainda não aplicada) — segue sem o bloco, igual usuário standalone
+  }
+
+  const system = buildSystemPrompt(tone, context) + constraintsBlock;
 
   try {
     const result = streamText({

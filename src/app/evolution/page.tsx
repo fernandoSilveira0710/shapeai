@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { TabBar } from "@/components/tab-bar";
+import { DesktopSidebar } from "@/components/desktop-sidebar";
 import { Button, Card, Sheet } from "@/components/ui";
 import { getExercise } from "@/data/exercises";
 import { dayKey, vibrate } from "@/lib/utils";
@@ -209,7 +210,9 @@ export default function EvolutionPage() {
     : null;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell-responsive">
+      <DesktopSidebar />
+      <div className="flex-1 flex flex-col min-h-0 lg:mx-auto lg:w-full lg:max-w-[900px]">
       <header className="px-5 pt-6 pb-3 border-b border-border">
         <h1 className="text-xl font-bold">Evolução</h1>
         <p className="text-xs text-muted mt-1">Números com história — não lab frio.</p>
@@ -428,6 +431,7 @@ export default function EvolutionPage() {
           </Card>
         )}
       </div>
+      </div>
 
       {/* ——— detalhe do dia ——— */}
       <Sheet
@@ -563,7 +567,7 @@ export default function EvolutionPage() {
         </form>
       </Sheet>
 
-      <TabBar />
+      <TabBar className="lg:hidden" />
     </div>
   );
 }

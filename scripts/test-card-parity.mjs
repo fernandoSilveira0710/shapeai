@@ -64,7 +64,7 @@ async function ask(text, waitMs = 16000) {
   await page.keyboard.press("Enter");
   await new Promise((r) => setTimeout(r, waitMs));
   const bubbles = await page.evaluate(() =>
-    [...document.querySelectorAll(".animate-rise")].slice(-2).map((n) => n.innerText.slice(0, 300))
+    [...document.querySelectorAll(".chat-scroll .animate-rise")].slice(-2).map((n) => n.innerText.slice(0, 300))
   );
   console.log(`\n>>> "${text}"`);
   console.log(JSON.stringify(bubbles, null, 1));
@@ -74,7 +74,7 @@ async function ask(text, waitMs = 16000) {
 console.log("=== TESTE 1: 'me dá a dieta da semana' (texto) — deve trazer card week_diet ===");
 const r1 = await ask("me dá a dieta da semana");
 const hasCard1 = await page.evaluate(() => {
-  const last = [...document.querySelectorAll(".animate-rise")].slice(-1)[0];
+  const last = [...document.querySelectorAll(".chat-scroll .animate-rise")].slice(-1)[0];
   return last?.innerText.includes("kcal/dia") || false;
 });
 console.log("Tem card de dieta?", hasCard1);
@@ -82,7 +82,7 @@ console.log("Tem card de dieta?", hasCard1);
 console.log("\n=== TESTE 2: 'como estou' (texto) — deve trazer card progress ===");
 const r2 = await ask("como estou");
 const hasCard2 = await page.evaluate(() => {
-  const last = [...document.querySelectorAll(".animate-rise")].slice(-1)[0];
+  const last = [...document.querySelectorAll(".chat-scroll .animate-rise")].slice(-1)[0];
   return last?.innerText.includes("streak") || last?.innerText.includes("treinos/7d") || false;
 });
 console.log("Tem card de progresso?", hasCard2);

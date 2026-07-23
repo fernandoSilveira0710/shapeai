@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TabBar } from "@/components/tab-bar";
+import { DesktopSidebar } from "@/components/desktop-sidebar";
 import { Button, Card, Chip } from "@/components/ui";
 import { getExercise } from "@/data/exercises";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
@@ -119,7 +120,9 @@ export default function MePage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell-responsive">
+      <DesktopSidebar />
+      <div className="flex-1 flex flex-col min-h-0 lg:mx-auto lg:w-full lg:max-w-[900px]">
       <header className="px-5 pt-6 pb-3 border-b border-border">
         <h1 className="text-xl font-bold">{profile.displayName}</h1>
         <p className="text-xs text-muted mt-1">
@@ -305,8 +308,9 @@ export default function MePage() {
           Shape.ai MVP · dados só neste browser (localStorage)
         </p>
       </div>
+      </div>
 
-      <TabBar />
+      <TabBar className="lg:hidden" />
     </div>
   );
 }

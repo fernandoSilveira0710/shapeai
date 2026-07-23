@@ -194,7 +194,7 @@ console.log("\n=== TESTE 3: abertura do dia cobra refeição de ontem ===");
     awaitingFeedbackId: null,
   });
   const opening = await page.evaluate(() => {
-    const bubbles = [...document.querySelectorAll(".animate-rise")];
+    const bubbles = [...document.querySelectorAll(".chat-scroll .animate-rise")];
     return bubbles[0]?.innerText ?? "(nenhuma mensagem)";
   });
   console.log("Mensagem de abertura:", JSON.stringify(opening));

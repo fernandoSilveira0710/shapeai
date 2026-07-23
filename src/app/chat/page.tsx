@@ -21,13 +21,27 @@ import { getExerciseMedia } from "@/data/exercise-media";
 import { ExerciseMedia } from "@/components/exercise-media";
 import { WEEKDAY_LABELS } from "@/lib/plan-generator";
 import { TabBar } from "@/components/tab-bar";
+import { DesktopSidebar } from "@/components/desktop-sidebar";
 import { Button, Chip, Sheet, TypingDots } from "@/components/ui";
+import {
+  buildDayMealCard,
+  buildDayWorkoutCard,
+  buildProgressCard,
+} from "@/lib/plan-cards";
 import { TONE_META } from "@/lib/tone";
 import { planDayForDate } from "@/lib/plan-generator";
 import { intakeChips } from "@/lib/first-contact";
 import { cn, dayKey, nowParts, vibrate } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
-import type { ChatMessage, RichCard } from "@/lib/types";
+import type {
+  BodyMetric,
+  ChatMessage,
+  MealLog,
+  Plan,
+  RichCard,
+  UserProfile,
+  WorkoutSession,
+} from "@/lib/types";
 import type {
   DayMealPayload,
   DayWorkoutPayload,
@@ -135,6 +149,8 @@ export default function ChatPage() {
   const approvePlan = useAppStore((s) => s.approvePlan);
   const showPlanCards = useAppStore((s) => s.showPlanCards);
   const sessions = useAppStore((s) => s.sessions);
+  const mealLogs = useAppStore((s) => s.mealLogs);
+  const metrics = useAppStore((s) => s.metrics);
   const intakeQueue = useAppStore((s) => s.intakeQueue);
   const intakeIndex = useAppStore((s) => s.intakeIndex);
   const uiRequest = useAppStore((s) => s.uiRequest);
@@ -350,7 +366,10 @@ export default function ChatPage() {
         ].filter(Boolean) as string[]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell-responsive">
+      <DesktopSidebar />
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+      <div className="flex flex-col flex-1 min-w-0 lg:max-w-[720px] lg:mx-auto lg:border-x lg:border-border">
       <header className="px-4 pt-4 pb-3 border-b border-border flex items-center gap-3">
         <div className="size-10 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center">
           <Sparkles className="size-5 text-brand" />
@@ -708,6 +727,28 @@ export default function ChatPage() {
           </Button>
         </form>
       </div>
+      </div>
+
+      <aside className="hidden lg:flex lg:w-80 lg:shrink-0 lg:flex-col lg:gap-4 lg:border-l lg:border-border lg:p-5 lg:overflow-y-auto">
+        <HojePanel
+          profile={profile}
+          plan={plan}
+          sessions={sessions}
+          mealLogs={mealLogs}
+          metrics={metrics}
+          hasTreino={hasTreino}
+          hasDieta={hasDieta}
+          onStart={tryStartWorkout}
+          onLogOption={(slot, option) => {
+            vibrate(10);
+            logMeal(slot, option, "on_plan", "chip");
+            addMessage({ role: "user", content: `Já comi: ${option}` });
+            addMessage({ role: "assistant", content: "Fechou. Anotado." });
+          }}
+          onLogOther={() => askInComposer("Já comi, mas foi: ")}
+        />
+      </aside>
+      </div>
 
       <Sheet
         open={weightSheet}
@@ -974,7 +1015,7 @@ export default function ChatPage() {
           })()}
       </Sheet>
 
-      <TabBar />
+      <TabBar className="lg:hidden" />
     </div>
   );
 }
@@ -1298,5 +1339,56 @@ function ProgressCard({ card }: { card: RichCard }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Painel lateral "Hoje" (lg+) — só existe em telas largas, ao lado da
+ * thread. Reusa os MESMOS componentes de card e as MESMAS funções de
+ * build do chat (buildDayWorkoutCard/buildDayMealCard/buildProgressCard,
+ * @/lib/plan-cards) — garante que o painel nunca diverge do que apareceria
+ * se o aluno pedisse "treino hoje"/"dieta hoje"/"como estou" no chat.
+ * Lê direto do store (não do histórico de mensagens), então reflete o
+ * estado atual mesmo se o aluno nunca pediu nada no chat ainda.
+ */
+function HojePanel({
+  profile,
+  plan,
+  sessions,
+  mealLogs,
+  metrics,
+  hasTreino,
+  hasDieta,
+  onStart,
+  onLogOption,
+  onLogOther,
+}: {
+  profile: UserProfile;
+  plan: Plan | null;
+  sessions: WorkoutSession[];
+  mealLogs: MealLog[];
+  metrics: BodyMetric[];
+  hasTreino: boolean;
+  hasDieta: boolean;
+  onStart: () => void;
+  onLogOption: (slot: string, option: string) => void;
+  onLogOther: () => void;
+}) {
+  if (!plan) return null;
+  const workoutCard = hasTreino ? buildDayWorkoutCard(profile, plan, sessions) : null;
+  const mealCard = hasDieta ? buildDayMealCard(profile, plan, mealLogs) : null;
+  const progressCard = buildProgressCard(sessions, mealLogs, metrics);
+
+  return (
+    <>
+      <h2 className="text-xs font-semibold text-muted uppercase tracking-wide px-1">
+        Hoje
+      </h2>
+      {workoutCard && <DayWorkoutCard card={workoutCard} onStart={onStart} />}
+      {mealCard && (
+        <DayMealCard card={mealCard} onLogOption={onLogOption} onLogOther={onLogOther} />
+      )}
+      <ProgressCard card={progressCard} />
+    </>
   );
 }

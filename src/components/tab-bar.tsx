@@ -6,22 +6,34 @@ import { MessageCircle, LineChart, User, Lock } from "lucide-react";
 import { cn, vibrate } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 
-const tabs = [
+export const tabs = [
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/evolution", label: "Evolução", icon: LineChart },
   { href: "/me", label: "Eu", icon: User },
 ];
 
-export function TabBar() {
-  const pathname = usePathname();
+/**
+ * Evolução/Eu só liberam depois do dossiê fechado + plano aprovado —
+ * antes disso não há dado nenhum pra mostrar, e confunde o fluxo.
+ * Compartilhado entre TabBar (mobile) e DesktopSidebar (lg+).
+ */
+export function useTabLock() {
   const intakeCompleted = useAppStore((s) => s.profile?.intakeCompleted);
   const approvedAt = useAppStore((s) => s.plan?.approvedAt);
-  // Evolução/Eu só liberam depois do dossiê fechado + plano aprovado —
-  // antes disso não há dado nenhum pra mostrar, e confunde o fluxo.
-  const locked = !intakeCompleted || !approvedAt;
+  return !intakeCompleted || !approvedAt;
+}
+
+export function TabBar({ className }: { className?: string }) {
+  const pathname = usePathname();
+  const locked = useTabLock();
 
   return (
-    <nav className="sticky bottom-0 z-20 border-t border-border bg-canvas/95 backdrop-blur-md px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1">
+    <nav
+      className={cn(
+        "sticky bottom-0 z-20 border-t border-border bg-canvas/95 backdrop-blur-md px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1",
+        className
+      )}
+    >
       <ul className="grid grid-cols-3 gap-1">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);

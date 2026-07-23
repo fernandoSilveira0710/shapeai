@@ -85,7 +85,7 @@ await page.goto("http://localhost:3000/chat", { waitUntil: "networkidle0" });
 await new Promise((r) => setTimeout(r, 900));
 
 const opening = await page.evaluate(() => {
-  const bubbles = [...document.querySelectorAll(".animate-rise")];
+  const bubbles = [...document.querySelectorAll(".chat-scroll .animate-rise")];
   return bubbles[0]?.innerText ?? "(nenhuma)";
 });
 console.log("=== Abertura ===");
@@ -106,7 +106,7 @@ await page.keyboard.press("Enter");
 await new Promise((r) => setTimeout(r, 15000));
 
 const reply = await page.evaluate(() => {
-  const bubbles = [...document.querySelectorAll(".animate-rise")];
+  const bubbles = [...document.querySelectorAll(".chat-scroll .animate-rise")];
   return bubbles[bubbles.length - 1]?.innerText ?? "(nenhuma)";
 });
 console.log("Resposta:", reply);

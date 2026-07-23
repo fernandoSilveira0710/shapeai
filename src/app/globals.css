@@ -67,6 +67,44 @@ body {
   }
 }
 
+/*
+ * Variante responsiva do app-shell — só pro chat/evolução/eu (os 3 tabs
+ * principais do aluno). Onboarding/login/welcome/splash/modo-treino
+ * continuam usando .app-shell puro (mobile-locked de propósito).
+ * Abaixo de 1024px é byte-a-byte igual ao .app-shell — zero mudança
+ * visual no mobile. A partir de 1024px destrava largura e vira row
+ * (sidebar + conteúdo lado a lado).
+ */
+.app-shell-responsive {
+  height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-canvas);
+  position: relative;
+  border-inline: 1px solid transparent;
+  overflow: hidden;
+}
+
+@media (min-width: 480px) {
+  .app-shell-responsive {
+    border-inline-color: var(--border-subtle);
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell-responsive {
+    max-width: none;
+    width: 100%;
+    height: 100vh;
+    border-inline: none;
+    box-shadow: none;
+    flex-direction: row;
+  }
+}
+
 /* scrollbars — tema dark em tudo (Windows mostra scrollbar sempre) */
 * {
   scrollbar-width: thin;

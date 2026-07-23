@@ -46,10 +46,11 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
+    const callbackNext = next ? `?next=${encodeURIComponent(next)}` : "";
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${callbackNext}`,
       },
     });
     if (err) {
@@ -71,10 +72,11 @@ export default function LoginPage() {
       return;
     }
     setEmailLoading(true);
+    const callbackNext = next ? `?next=${encodeURIComponent(next)}` : "";
     const { error: err } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/auth/callback${callbackNext}`,
       },
     });
     setEmailLoading(false);
@@ -85,9 +87,21 @@ export default function LoginPage() {
     setEmailSent(true);
   }
 
+  // login vindo do fluxo do painel B2B (desktop-first) não usa o
+  // .app-shell mobile-locked do app do aluno — mesmo padrão de
+  // /painel/signup: canvas full-width, card centralizado.
+  const next = params.get("next") ?? "";
+  const isPainelFlow = next.startsWith("/painel") || next.startsWith("/join");
+
   return (
-    <div className="app-shell px-6 py-10 justify-between">
-      <div className="pt-8">
+    <div
+      className={
+        isPainelFlow
+          ? "min-h-screen bg-canvas flex items-center justify-center px-6 py-10"
+          : "app-shell px-6 py-10 justify-between"
+      }
+    >
+      <div className={isPainelFlow ? "w-full max-w-md" : "pt-8"}>
         <Link href="/" className="text-sm text-muted hover:text-ink">
           ← Voltar
         </Link>
@@ -158,17 +172,19 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="space-y-3 pb-4">
-        <Link href="/onboarding" className="block">
-          <Button size="lg" className="w-full" variant="primary">
-            Continuar no modo demo (local)
-          </Button>
-        </Link>
-        <p className="text-center text-xs text-muted">
-          Ao continuar, você entende que não é serviço médico. Demo local fica
-          só neste aparelho.
-        </p>
-      </div>
+      {!isPainelFlow && (
+        <div className="space-y-3 pb-4">
+          <Link href="/onboarding" className="block">
+            <Button size="lg" className="w-full" variant="primary">
+              Continuar no modo demo (local)
+            </Button>
+          </Link>
+          <p className="text-center text-xs text-muted">
+            Ao continuar, você entende que não é serviço médico. Demo local fica
+            só neste aparelho.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
